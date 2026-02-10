@@ -25,7 +25,7 @@ This Go-based MCP server integrates with the Slack API to fetch message content.
 
 ```bash
 # Clone the repository
-git clone https://github.com/slack-mcp-server/slack-mcp-server.git
+git clone https://github.com/Bitovi/slack-mcp-server.git
 cd slack-mcp-server
 
 # Build the server
