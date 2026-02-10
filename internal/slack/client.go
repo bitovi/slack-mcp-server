@@ -5,7 +5,6 @@ package slack
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/slack-go/slack"
 
@@ -119,60 +118,6 @@ func convertMessage(msg *slack.Message) *types.Message {
 		ThreadTS:   msg.ThreadTimestamp,
 		ReplyCount: msg.ReplyCount,
 	}
-}
-
-// wrapSlackError converts Slack API errors to our typed errors.
-func wrapSlackError(err error) error {
-	if err == nil {
-		return nil
-	}
-
-	errStr := err.Error()
-
-	// Check for rate limiting
-	if strings.Contains(errStr, "rate_limit") || strings.Contains(errStr, "ratelimited") {
-		return types.NewSlackError(types.ErrCodeRateLimited,
-			"Slack API rate limit exceeded. Please wait and try again.")
-	}
-
-	// Check for authentication errors
-	if strings.Contains(errStr, "invalid_auth") || strings.Contains(errStr, "not_authed") {
-		return types.NewSlackError(types.ErrCodeInvalidToken,
-			"Invalid or expired Slack bot token. Please check your SLACK_BOT_TOKEN.")
-	}
-
-	// Check for token scope errors
-	if strings.Contains(errStr, "missing_scope") || strings.Contains(errStr, "token_expired") {
-		return types.NewSlackError(types.ErrCodeInvalidToken,
-			"Slack bot token lacks required scopes or has expired.")
-	}
-
-	// Check for channel not found
-	if strings.Contains(errStr, "channel_not_found") {
-		return types.NewSlackError(types.ErrCodeChannelNotFound,
-			"Channel not found. The channel may have been deleted or the ID is incorrect.")
-	}
-
-	// Check for not in channel
-	if strings.Contains(errStr, "not_in_channel") {
-		return types.NewSlackError(types.ErrCodeNotInChannel,
-			"Bot is not a member of this channel. Please invite the bot to the channel.")
-	}
-
-	// Check for permission denied
-	if strings.Contains(errStr, "access_denied") || strings.Contains(errStr, "is_archived") {
-		return types.NewSlackError(types.ErrCodePermissionDenied,
-			"Access denied. The channel may be archived or the bot lacks permissions.")
-	}
-
-	// Check for message not found
-	if strings.Contains(errStr, "message_not_found") || strings.Contains(errStr, "thread_not_found") {
-		return types.NewSlackError(types.ErrCodeMessageNotFound,
-			"Message or thread not found.")
-	}
-
-	// Generic error wrapping
-	return types.NewSlackError("slack_error", fmt.Sprintf("Slack API error: %s", errStr))
 }
 
 // ClientInterface defines the interface for Slack client operations.
