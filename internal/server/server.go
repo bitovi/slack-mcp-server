@@ -3,13 +3,13 @@
 package server
 
 import (
-	"context"
 	"fmt"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
 	slackclient "github.com/slack-mcp-server/slack-mcp-server/internal/slack"
+	"github.com/slack-mcp-server/slack-mcp-server/internal/tools"
 )
 
 const (
@@ -26,6 +26,8 @@ type Server struct {
 	mcpServer *server.MCPServer
 	// slackClient is the Slack API client for retrieving messages.
 	slackClient slackclient.ClientInterface
+	// readMessageHandler handles the read_message tool.
+	readMessageHandler *tools.ReadMessageHandler
 }
 
 // Config holds the configuration for creating a new Server.
@@ -58,9 +60,13 @@ func New(cfg Config) (*Server, error) {
 		server.WithToolCapabilities(true),
 	)
 
+	// Create the read_message handler
+	readMessageHandler := tools.NewReadMessageHandler(slackClient)
+
 	s := &Server{
-		mcpServer:   mcpServer,
-		slackClient: slackClient,
+		mcpServer:          mcpServer,
+		slackClient:        slackClient,
+		readMessageHandler: readMessageHandler,
 	}
 
 	// Register tools
@@ -84,9 +90,13 @@ func NewWithClient(client slackclient.ClientInterface) *Server {
 		server.WithToolCapabilities(true),
 	)
 
+	// Create the read_message handler
+	readMessageHandler := tools.NewReadMessageHandler(client)
+
 	s := &Server{
-		mcpServer:   mcpServer,
-		slackClient: client,
+		mcpServer:          mcpServer,
+		slackClient:        client,
+		readMessageHandler: readMessageHandler,
 	}
 
 	// Register tools
@@ -110,32 +120,8 @@ func (s *Server) registerTools() {
 		),
 	)
 
-	// Register the tool with its handler
-	s.mcpServer.AddTool(readMessageTool, s.handleReadMessage)
-}
-
-// handleReadMessage is the handler for the read_message MCP tool.
-// It parses the Slack URL, retrieves the message, and optionally fetches
-// the thread if applicable.
-//
-// This handler will be fully implemented in internal/tools/read_message.go.
-// For now, it provides the basic structure and delegates to the tools package.
-func (s *Server) handleReadMessage(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	// Get the URL argument
-	url, err := request.RequireString("url")
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("missing required argument 'url': %v", err)), nil
-	}
-
-	// Placeholder response until the full implementation is added in subtask-4-2
-	// The actual implementation will:
-	// 1. Parse the URL using urlparser.Parse()
-	// 2. Fetch the message using slackClient.GetMessage()
-	// 3. Fetch the thread if needed using slackClient.GetThread()
-	// 4. Return the formatted result
-	_ = url
-
-	return mcp.NewToolResultError("read_message tool not fully implemented yet"), nil
+	// Register the tool with the ReadMessageHandler
+	s.mcpServer.AddTool(readMessageTool, s.readMessageHandler.HandleFunc())
 }
 
 // Run starts the MCP server using Stdio transport.
