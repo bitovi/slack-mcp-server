@@ -11,7 +11,7 @@ GOLINT=golangci-lint
 
 # Binary name
 BINARY_NAME=slack-mcp-server
-BINARY_PATH=./$(BINARY_NAME)
+BINARY_PATH=./bin/$(BINARY_NAME)
 
 # Build flags
 LDFLAGS=-ldflags "-X main.version=$(shell git describe --tags --always --dirty 2>/dev/null || echo 'dev') -X main.buildTime=$(shell date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -23,6 +23,7 @@ all: build
 # Build the binary
 .PHONY: build
 build:
+	mkdir -p bin
 	$(GOBUILD) $(LDFLAGS) -o $(BINARY_PATH) ./cmd/server
 
 # Run the server (requires SLACK_BOT_TOKEN environment variable)

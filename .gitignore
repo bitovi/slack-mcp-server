@@ -1,4 +1,7 @@
 
+# Build outputs
+bin/
+
 # Auto Claude generated files
 .auto-claude/
 .auto-claude-security.json
