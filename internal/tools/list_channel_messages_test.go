@@ -652,6 +652,187 @@ func TestListChannelMessagesHandler_Handle_SlackErrors(t *testing.T) {
 	}
 }
 
+// TestListChannelMessagesHandler_Handle_Pagination tests pagination behavior including has_more flag and limit capping.
+func TestListChannelMessagesHandler_Handle_Pagination(t *testing.T) {
+	tests := []struct {
+		name           string
+		channelID      string
+		requestLimit   float64
+		mockHasMore    bool
+		mockMessages   []types.Message
+		wantLimit      int  // Expected limit passed to GetChannelHistory
+		wantHasMore    bool // Expected has_more in result
+	}{
+		{
+			name:         "has_more true when more messages available",
+			channelID:    "C01234567",
+			requestLimit: 50,
+			mockHasMore:  true,
+			mockMessages: []types.Message{
+				{User: "U12345678", Text: "Message 1", Timestamp: "1355517523.000001"},
+				{User: "U12345678", Text: "Message 2", Timestamp: "1355517523.000002"},
+			},
+			wantLimit:   50,
+			wantHasMore: true,
+		},
+		{
+			name:         "has_more false when no more messages",
+			channelID:    "C01234567",
+			requestLimit: 50,
+			mockHasMore:  false,
+			mockMessages: []types.Message{
+				{User: "U12345678", Text: "Message 1", Timestamp: "1355517523.000001"},
+			},
+			wantLimit:   50,
+			wantHasMore: false,
+		},
+		{
+			name:         "has_more false with empty channel",
+			channelID:    "C01234567",
+			requestLimit: 100,
+			mockHasMore:  false,
+			mockMessages: []types.Message{},
+			wantLimit:    100,
+			wantHasMore:  false,
+		},
+		{
+			name:         "limit capped at 200 when requesting 201",
+			channelID:    "C01234567",
+			requestLimit: 201,
+			mockHasMore:  false,
+			mockMessages: []types.Message{
+				{User: "U12345678", Text: "Message", Timestamp: "1355517523.000001"},
+			},
+			wantLimit:   200,
+			wantHasMore: false,
+		},
+		{
+			name:         "limit capped at 200 when requesting 500",
+			channelID:    "C01234567",
+			requestLimit: 500,
+			mockHasMore:  true,
+			mockMessages: []types.Message{
+				{User: "U12345678", Text: "Message", Timestamp: "1355517523.000001"},
+			},
+			wantLimit:   200,
+			wantHasMore: true,
+		},
+		{
+			name:         "limit capped at 200 when requesting 1000",
+			channelID:    "C01234567",
+			requestLimit: 1000,
+			mockHasMore:  false,
+			mockMessages: []types.Message{},
+			wantLimit:    200,
+			wantHasMore:  false,
+		},
+		{
+			name:         "limit exactly 200 passed through unchanged",
+			channelID:    "C01234567",
+			requestLimit: 200,
+			mockHasMore:  true,
+			mockMessages: []types.Message{
+				{User: "U12345678", Text: "Message", Timestamp: "1355517523.000001"},
+			},
+			wantLimit:   200,
+			wantHasMore: true,
+		},
+		{
+			name:         "limit below 200 passed through unchanged",
+			channelID:    "C01234567",
+			requestLimit: 100,
+			mockHasMore:  true,
+			mockMessages: []types.Message{
+				{User: "U12345678", Text: "Message", Timestamp: "1355517523.000001"},
+			},
+			wantLimit:   100,
+			wantHasMore: true,
+		},
+		{
+			name:         "has_more with max limit",
+			channelID:    "C01234567",
+			requestLimit: 200,
+			mockHasMore:  true,
+			mockMessages: func() []types.Message {
+				// Simulate 200 messages returned with more available
+				msgs := make([]types.Message, 200)
+				for i := 0; i < 200; i++ {
+					msgs[i] = types.Message{
+						User:      "U12345678",
+						Text:      "Message",
+						Timestamp: "1355517523.000001",
+					}
+				}
+				return msgs
+			}(),
+			wantLimit:   200,
+			wantHasMore: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var capturedLimit int
+			mock := &mockSlackClient{
+				getChannelHistory: func(ctx context.Context, channelID string, limit int, oldest, latest string) ([]types.Message, bool, error) {
+					capturedLimit = limit
+					if channelID != tt.channelID {
+						t.Errorf("GetChannelHistory channelID = %q, want %q", channelID, tt.channelID)
+					}
+					return tt.mockMessages, tt.mockHasMore, nil
+				},
+				getUserInfo: func(ctx context.Context, userID string) (*types.UserInfo, error) {
+					return nil, nil // User resolution not the focus of this test
+				},
+			}
+
+			handler := NewListChannelMessagesHandler(mock)
+			request := createListChannelMessagesRequest(map[string]interface{}{
+				"channel_id": tt.channelID,
+				"limit":      tt.requestLimit,
+			})
+
+			result, err := handler.Handle(context.Background(), request)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if result.IsError {
+				t.Fatalf("expected success, got error: %+v", result.Content)
+			}
+
+			// Verify the limit was capped correctly
+			if capturedLimit != tt.wantLimit {
+				t.Errorf("limit passed to GetChannelHistory = %d, want %d", capturedLimit, tt.wantLimit)
+			}
+
+			// Parse the result JSON to verify has_more
+			if len(result.Content) == 0 {
+				t.Fatal("expected content in result")
+			}
+
+			textContent, ok := result.Content[0].(mcp.TextContent)
+			if !ok {
+				t.Fatalf("expected TextContent, got %T", result.Content[0])
+			}
+
+			var listResult types.ListChannelMessagesResult
+			if err := json.Unmarshal([]byte(textContent.Text), &listResult); err != nil {
+				t.Fatalf("failed to parse result JSON: %v", err)
+			}
+
+			if listResult.HasMore != tt.wantHasMore {
+				t.Errorf("result HasMore = %v, want %v", listResult.HasMore, tt.wantHasMore)
+			}
+
+			// Verify message count matches
+			if len(listResult.Messages) != len(tt.mockMessages) {
+				t.Errorf("result Messages length = %d, want %d", len(listResult.Messages), len(tt.mockMessages))
+			}
+		})
+	}
+}
+
 // TestListChannelMessagesHandler_Handle_UserMapping tests that mentioned users are resolved and included in user_mapping.
 func TestListChannelMessagesHandler_Handle_UserMapping(t *testing.T) {
 	tests := []struct {
