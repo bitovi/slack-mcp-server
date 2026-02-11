@@ -70,6 +70,12 @@ type ReadMessageResult struct {
 	Thread []Message `json:"thread,omitempty"`
 	// ChannelID is the Slack channel where the message was posted.
 	ChannelID string `json:"channel_id"`
+	// CurrentUser contains the authenticated bot's user information.
+	// Nil if user lookup was not performed or failed.
+	CurrentUser *UserInfo `json:"current_user,omitempty"`
+	// UserMapping maps user IDs to user info for all users mentioned in message text.
+	// Empty if no mentions were found or user resolution was not performed.
+	UserMapping map[string]UserInfo `json:"user_mapping,omitempty"`
 }
 
 // SlackError represents an error from the Slack API or URL parsing.
