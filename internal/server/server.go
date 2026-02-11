@@ -65,10 +65,14 @@ func New(cfg Config) (*Server, error) {
 	// Create the read_message handler
 	readMessageHandler := tools.NewReadMessageHandler(slackClient)
 
+	// Create the list_channel_messages handler
+	listChannelMessagesHandler := tools.NewListChannelMessagesHandler(slackClient)
+
 	s := &Server{
-		mcpServer:          mcpServer,
-		slackClient:        slackClient,
-		readMessageHandler: readMessageHandler,
+		mcpServer:                  mcpServer,
+		slackClient:                slackClient,
+		readMessageHandler:         readMessageHandler,
+		listChannelMessagesHandler: listChannelMessagesHandler,
 	}
 
 	// Register tools
@@ -95,10 +99,14 @@ func NewWithClient(client slackclient.ClientInterface) *Server {
 	// Create the read_message handler
 	readMessageHandler := tools.NewReadMessageHandler(client)
 
+	// Create the list_channel_messages handler
+	listChannelMessagesHandler := tools.NewListChannelMessagesHandler(client)
+
 	s := &Server{
-		mcpServer:          mcpServer,
-		slackClient:        client,
-		readMessageHandler: readMessageHandler,
+		mcpServer:                  mcpServer,
+		slackClient:                client,
+		readMessageHandler:         readMessageHandler,
+		listChannelMessagesHandler: listChannelMessagesHandler,
 	}
 
 	// Register tools
