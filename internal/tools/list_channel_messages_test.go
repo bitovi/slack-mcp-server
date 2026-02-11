@@ -423,3 +423,162 @@ func TestListChannelMessagesHandler_HandleFunc(t *testing.T) {
 		t.Error("expected success result")
 	}
 }
+
+func TestListChannelMessagesHandler_Handle_InvalidLimitType(t *testing.T) {
+	mock := &mockSlackClient{}
+	handler := NewListChannelMessagesHandler(mock)
+
+	// Test with string type limit (invalid)
+	request := createListChannelMessagesRequest(map[string]interface{}{
+		"channel_id": "C01234567",
+		"limit":      "not a number",
+	})
+
+	result, err := handler.Handle(context.Background(), request)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !result.IsError {
+		t.Error("expected error result for invalid limit type")
+	}
+
+	// Check error message
+	if len(result.Content) == 0 {
+		t.Fatal("expected error content")
+	}
+	textContent, ok := result.Content[0].(mcp.TextContent)
+	if !ok {
+		t.Fatalf("expected TextContent, got %T", result.Content[0])
+	}
+	if !strings.Contains(textContent.Text, "limit") {
+		t.Errorf("error message should mention 'limit', got: %s", textContent.Text)
+	}
+}
+
+func TestListChannelMessagesHandler_Handle_ZeroLimitUsesMinimum(t *testing.T) {
+	var capturedLimit int
+	mock := &mockSlackClient{
+		getChannelHistory: func(ctx context.Context, channelID string, limit int, oldest, latest string) ([]types.Message, bool, error) {
+			capturedLimit = limit
+			return []types.Message{}, false, nil
+		},
+	}
+
+	handler := NewListChannelMessagesHandler(mock)
+
+	// Test with zero limit - should be normalized to 1
+	request := createListChannelMessagesRequest(map[string]interface{}{
+		"channel_id": "C01234567",
+		"limit":      float64(0),
+	})
+
+	result, err := handler.Handle(context.Background(), request)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if result.IsError {
+		t.Fatalf("expected success, got error: %+v", result.Content)
+	}
+
+	// Zero limit should be normalized to 1 (minimum valid value)
+	if capturedLimit != 1 {
+		t.Errorf("zero limit should be normalized to 1, got: %d", capturedLimit)
+	}
+}
+
+func TestListChannelMessagesHandler_Handle_NegativeLimitUsesMinimum(t *testing.T) {
+	var capturedLimit int
+	mock := &mockSlackClient{
+		getChannelHistory: func(ctx context.Context, channelID string, limit int, oldest, latest string) ([]types.Message, bool, error) {
+			capturedLimit = limit
+			return []types.Message{}, false, nil
+		},
+	}
+
+	handler := NewListChannelMessagesHandler(mock)
+
+	// Test with negative limit - should be normalized to 1
+	request := createListChannelMessagesRequest(map[string]interface{}{
+		"channel_id": "C01234567",
+		"limit":      float64(-10),
+	})
+
+	result, err := handler.Handle(context.Background(), request)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if result.IsError {
+		t.Fatalf("expected success, got error: %+v", result.Content)
+	}
+
+	// Negative limit should be normalized to 1 (minimum valid value)
+	if capturedLimit != 1 {
+		t.Errorf("negative limit should be normalized to 1, got: %d", capturedLimit)
+	}
+}
+
+func TestListChannelMessagesHandler_Handle_LimitExceedsMaximum(t *testing.T) {
+	var capturedLimit int
+	mock := &mockSlackClient{
+		getChannelHistory: func(ctx context.Context, channelID string, limit int, oldest, latest string) ([]types.Message, bool, error) {
+			capturedLimit = limit
+			return []types.Message{}, false, nil
+		},
+	}
+
+	handler := NewListChannelMessagesHandler(mock)
+
+	// Test with limit exceeding max (200) - should be capped at 200
+	request := createListChannelMessagesRequest(map[string]interface{}{
+		"channel_id": "C01234567",
+		"limit":      float64(500),
+	})
+
+	result, err := handler.Handle(context.Background(), request)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if result.IsError {
+		t.Fatalf("expected success, got error: %+v", result.Content)
+	}
+
+	// Limit exceeding max should be capped at 200
+	if capturedLimit != 200 {
+		t.Errorf("limit exceeding max should be capped at 200, got: %d", capturedLimit)
+	}
+}
+
+func TestListChannelMessagesHandler_Handle_DefaultLimit(t *testing.T) {
+	var capturedLimit int
+	mock := &mockSlackClient{
+		getChannelHistory: func(ctx context.Context, channelID string, limit int, oldest, latest string) ([]types.Message, bool, error) {
+			capturedLimit = limit
+			return []types.Message{}, false, nil
+		},
+	}
+
+	handler := NewListChannelMessagesHandler(mock)
+
+	// Test with no limit specified - should use default of 100
+	request := createListChannelMessagesRequest(map[string]interface{}{
+		"channel_id": "C01234567",
+	})
+
+	result, err := handler.Handle(context.Background(), request)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if result.IsError {
+		t.Fatalf("expected success, got error: %+v", result.Content)
+	}
+
+	// No limit specified should use default of 100
+	if capturedLimit != 100 {
+		t.Errorf("default limit should be 100, got: %d", capturedLimit)
+	}
+}
