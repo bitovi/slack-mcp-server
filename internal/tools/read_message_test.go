@@ -15,9 +15,12 @@ import (
 
 // mockSlackClient is a test double for the Slack client interface.
 type mockSlackClient struct {
-	getMessage     func(ctx context.Context, channelID, timestamp string) (*types.Message, error)
-	getThread      func(ctx context.Context, channelID, threadTS string) ([]types.Message, error)
-	hasThread      func(message *types.Message) bool
+	getMessage      func(ctx context.Context, channelID, timestamp string) (*types.Message, error)
+	getThread       func(ctx context.Context, channelID, threadTS string) ([]types.Message, error)
+	hasThread       func(message *types.Message) bool
+	getUserInfo     func(ctx context.Context, userID string) (*types.UserInfo, error)
+	getCurrentUser  func(ctx context.Context) (*types.UserInfo, error)
+	extractMentions func(text string) []string
 }
 
 // GetMessage implements slackclient.ClientInterface.
@@ -43,6 +46,39 @@ func (m *mockSlackClient) HasThread(message *types.Message) bool {
 	}
 	// Default behavior: check ReplyCount > 0
 	return message != nil && message.ReplyCount > 0
+}
+
+// GetUserInfo implements slackclient.ClientInterface.
+func (m *mockSlackClient) GetUserInfo(ctx context.Context, userID string) (*types.UserInfo, error) {
+	if m.getUserInfo != nil {
+		return m.getUserInfo(ctx, userID)
+	}
+	// Default: return nil to simulate user not found
+	return nil, nil
+}
+
+// GetCurrentUser implements slackclient.ClientInterface.
+func (m *mockSlackClient) GetCurrentUser(ctx context.Context) (*types.UserInfo, error) {
+	if m.getCurrentUser != nil {
+		return m.getCurrentUser(ctx)
+	}
+	// Default: return a mock current user
+	return &types.UserInfo{
+		ID:          "UBOT12345",
+		Name:        "test_bot",
+		DisplayName: "Test Bot",
+		RealName:    "Test Bot",
+		IsBot:       true,
+	}, nil
+}
+
+// ExtractMentions implements slackclient.ClientInterface.
+func (m *mockSlackClient) ExtractMentions(text string) []string {
+	if m.extractMentions != nil {
+		return m.extractMentions(text)
+	}
+	// Default: return empty slice (no mentions)
+	return []string{}
 }
 
 // Ensure mockSlackClient implements the interface.

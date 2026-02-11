@@ -100,6 +100,13 @@ func (h *ReadMessageHandler) Handle(ctx context.Context, request mcp.CallToolReq
 	// Extract mentioned users from all messages and build user mapping
 	result.UserMapping = h.buildUserMapping(ctx, result)
 
+	// Fetch the authenticated user's identity (graceful degradation on failure)
+	currentUser, err := h.slackClient.GetCurrentUser(ctx)
+	if err == nil && currentUser != nil {
+		result.CurrentUser = currentUser
+	}
+	// Note: If GetCurrentUser fails, we continue without current_user rather than failing
+
 	// Return the successful result as JSON content
 	return h.successResult(result)
 }
