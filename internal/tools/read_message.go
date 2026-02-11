@@ -97,6 +97,9 @@ func (h *ReadMessageHandler) Handle(ctx context.Context, request mcp.CallToolReq
 		result.Thread = thread
 	}
 
+	// Extract mentioned users from all messages and build user mapping
+	result.UserMapping = h.buildUserMapping(ctx, result)
+
 	// Return the successful result as JSON content
 	return h.successResult(result)
 }
@@ -214,6 +217,59 @@ func (h *ReadMessageHandler) resolveUserForMessage(ctx context.Context, msg *typ
 	msg.UserName = userInfo.Name
 	msg.DisplayName = userInfo.DisplayName
 	msg.RealName = userInfo.RealName
+}
+
+// buildUserMapping extracts mentioned user IDs from all messages and resolves them to UserInfo.
+//
+// This method scans the primary message and all thread messages for Slack mentions
+// (e.g., <@U06025G6B28>) and builds a mapping of user IDs to their UserInfo.
+// If a user lookup fails, that user is simply omitted from the mapping.
+//
+// Parameters:
+//   - ctx: Context for cancellation and timeouts
+//   - result: The ReadMessageResult containing the message and optional thread
+//
+// Returns a map of user IDs to UserInfo for all mentioned users, or nil if no mentions found.
+func (h *ReadMessageHandler) buildUserMapping(ctx context.Context, result *types.ReadMessageResult) map[string]types.UserInfo {
+	// Collect all unique mentioned user IDs
+	mentionedUserIDs := make(map[string]bool)
+
+	// Extract mentions from the primary message
+	for _, userID := range h.slackClient.ExtractMentions(result.Message.Text) {
+		mentionedUserIDs[userID] = true
+	}
+
+	// Extract mentions from all thread messages
+	for _, msg := range result.Thread {
+		for _, userID := range h.slackClient.ExtractMentions(msg.Text) {
+			mentionedUserIDs[userID] = true
+		}
+	}
+
+	// If no mentions found, return nil
+	if len(mentionedUserIDs) == 0 {
+		return nil
+	}
+
+	// Build the user mapping by resolving each mentioned user
+	userMapping := make(map[string]types.UserInfo)
+	for userID := range mentionedUserIDs {
+		userInfo, err := h.slackClient.GetUserInfo(ctx, userID)
+		if err != nil {
+			// Graceful degradation: skip users we can't resolve
+			continue
+		}
+		if userInfo != nil {
+			userMapping[userID] = *userInfo
+		}
+	}
+
+	// Return nil if no users were resolved (to avoid empty map in JSON)
+	if len(userMapping) == 0 {
+		return nil
+	}
+
+	return userMapping
 }
 
 // ReadMessage is a standalone function that processes a read_message request.
