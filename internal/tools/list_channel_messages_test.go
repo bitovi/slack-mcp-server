@@ -582,3 +582,72 @@ func TestListChannelMessagesHandler_Handle_DefaultLimit(t *testing.T) {
 		t.Errorf("default limit should be 100, got: %d", capturedLimit)
 	}
 }
+
+func TestListChannelMessagesHandler_Handle_SlackErrors(t *testing.T) {
+	tests := []struct {
+		name           string
+		errorCode      string
+		wantErrContain string
+	}{
+		{
+			name:           "rate limited",
+			errorCode:      types.ErrCodeRateLimited,
+			wantErrContain: "Rate limit exceeded",
+		},
+		{
+			name:           "invalid token",
+			errorCode:      types.ErrCodeInvalidToken,
+			wantErrContain: "Authentication failed",
+		},
+		{
+			name:           "channel not found",
+			errorCode:      types.ErrCodeChannelNotFound,
+			wantErrContain: "Channel not found",
+		},
+		{
+			name:           "not in channel",
+			errorCode:      types.ErrCodeNotInChannel,
+			wantErrContain: "not a member of this channel",
+		},
+		{
+			name:           "permission denied",
+			errorCode:      types.ErrCodePermissionDenied,
+			wantErrContain: "Permission denied",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := &mockSlackClient{
+				getChannelHistory: func(ctx context.Context, channelID string, limit int, oldest, latest string) ([]types.Message, bool, error) {
+					return nil, false, types.NewSlackError(tt.errorCode, "mock error")
+				},
+			}
+			handler := NewListChannelMessagesHandler(mock)
+			request := createListChannelMessagesRequest(map[string]interface{}{
+				"channel_id": "C01234567",
+			})
+
+			result, err := handler.Handle(context.Background(), request)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if !result.IsError {
+				t.Error("expected error result")
+			}
+
+			// Check error message
+			if len(result.Content) == 0 {
+				t.Fatal("expected error content")
+			}
+			textContent, ok := result.Content[0].(mcp.TextContent)
+			if !ok {
+				t.Fatalf("expected TextContent, got %T", result.Content[0])
+			}
+			if !strings.Contains(textContent.Text, tt.wantErrContain) {
+				t.Errorf("error message should contain %q, got: %s", tt.wantErrContain, textContent.Text)
+			}
+		})
+	}
+}
