@@ -19,15 +19,23 @@ var mentionPattern = regexp.MustCompile(`<@(U[A-Z0-9]+)>`)
 
 // Client wraps the Slack API client to provide message and thread retrieval.
 type Client struct {
-	api       *slack.Client
-	userCache sync.Map // Maps user ID (string) to user display name (string)
+	api          *slack.Client
+	userTokenAPI *slack.Client // User token API client for operations requiring user token (e.g., search)
+	userCache    sync.Map      // Maps user ID (string) to user display name (string)
 }
 
-// NewClient creates a new Slack client with the provided bot token.
-func NewClient(token string) *Client {
-	return &Client{
-		api: slack.New(token),
+// NewClient creates a new Slack client with the provided tokens.
+// The botToken is required for bot-level API operations (messages, channels).
+// The userToken is optional and used for user-level API operations (search).
+// If userToken is empty, search operations will return an error when called.
+func NewClient(botToken, userToken string) *Client {
+	client := &Client{
+		api: slack.New(botToken),
 	}
+	if userToken != "" {
+		client.userTokenAPI = slack.New(userToken)
+	}
+	return client
 }
 
 // GetMessage retrieves a single message from a Slack channel by its timestamp.
