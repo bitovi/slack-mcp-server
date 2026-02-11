@@ -28,6 +28,8 @@ type Server struct {
 	slackClient slackclient.ClientInterface
 	// readMessageHandler handles the read_message tool.
 	readMessageHandler *tools.ReadMessageHandler
+	// listChannelMessagesHandler handles the list_channel_messages tool.
+	listChannelMessagesHandler *tools.ListChannelMessagesHandler
 }
 
 // Config holds the configuration for creating a new Server.
