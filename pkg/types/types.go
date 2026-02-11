@@ -78,6 +78,22 @@ type ReadMessageResult struct {
 	UserMapping map[string]UserInfo `json:"user_mapping,omitempty"`
 }
 
+// ListChannelMessagesResult is the output schema for the list_channel_messages MCP tool.
+type ListChannelMessagesResult struct {
+	// Messages contains the retrieved messages in reverse chronological order (newest first).
+	Messages []Message `json:"messages"`
+	// ChannelID is the Slack channel where the messages were retrieved from.
+	ChannelID string `json:"channel_id"`
+	// HasMore indicates whether additional messages exist beyond the requested limit.
+	HasMore bool `json:"has_more"`
+	// CurrentUser contains the authenticated bot's user information.
+	// Nil if user lookup was not performed or failed.
+	CurrentUser *UserInfo `json:"current_user,omitempty"`
+	// UserMapping maps user IDs to user info for all users mentioned in message texts.
+	// Empty if no mentions were found or user resolution was not performed.
+	UserMapping map[string]UserInfo `json:"user_mapping,omitempty"`
+}
+
 // SlackError represents an error from the Slack API or URL parsing.
 type SlackError struct {
 	// Code is a machine-readable error code.
