@@ -132,6 +132,28 @@ func (s *Server) registerTools() {
 
 	// Register the tool with the ReadMessageHandler
 	s.mcpServer.AddTool(readMessageTool, s.readMessageHandler.HandleFunc())
+
+	// Create the list_channel_messages tool
+	listChannelMessagesTool := mcp.NewTool("list_channel_messages",
+		mcp.WithDescription("Retrieve messages from a Slack channel to search for information. "+
+			"Returns messages in reverse chronological order (newest first)."),
+		mcp.WithString("channel_id",
+			mcp.Required(),
+			mcp.Description("The Slack channel ID (e.g., 'C01234567')"),
+		),
+		mcp.WithNumber("limit",
+			mcp.Description("Number of messages to retrieve (default: 100, max: 200)"),
+		),
+		mcp.WithString("oldest",
+			mcp.Description("Only messages after this Unix timestamp (inclusive)"),
+		),
+		mcp.WithString("latest",
+			mcp.Description("Only messages before this Unix timestamp (inclusive)"),
+		),
+	)
+
+	// Register the tool with the ListChannelMessagesHandler
+	s.mcpServer.AddTool(listChannelMessagesTool, s.listChannelMessagesHandler.HandleFunc())
 }
 
 // Run starts the MCP server using Stdio transport.
