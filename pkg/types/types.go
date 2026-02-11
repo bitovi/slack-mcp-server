@@ -1,6 +1,23 @@
 // Package types provides shared type definitions for the Slack MCP server.
 package types
 
+// UserInfo contains resolved user information from Slack.
+type UserInfo struct {
+	// ID is the Slack user ID (e.g., "U06025G6B28").
+	ID string `json:"id"`
+	// Name is the username (handle) without the @ symbol.
+	Name string `json:"name"`
+	// DisplayName is the user's display name, which may differ from their username.
+	DisplayName string `json:"display_name"`
+	// RealName is the user's full name.
+	RealName string `json:"real_name"`
+	// IsBot indicates whether this user is a bot account.
+	IsBot bool `json:"is_bot"`
+	// IsDeleted indicates whether this user account has been deleted.
+	// Only set when true.
+	IsDeleted bool `json:"is_deleted,omitempty"`
+}
+
 // Message represents a Slack message.
 type Message struct {
 	// User is the Slack user ID of the message author.
