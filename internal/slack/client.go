@@ -5,6 +5,7 @@ package slack
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/slack-go/slack"
 
@@ -13,7 +14,8 @@ import (
 
 // Client wraps the Slack API client to provide message and thread retrieval.
 type Client struct {
-	api *slack.Client
+	api       *slack.Client
+	userCache sync.Map // Maps user ID (string) to user display name (string)
 }
 
 // NewClient creates a new Slack client with the provided bot token.
