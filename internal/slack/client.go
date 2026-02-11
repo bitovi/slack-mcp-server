@@ -5,6 +5,7 @@ package slack
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"sync"
 
@@ -12,6 +13,9 @@ import (
 
 	"github.com/slack-mcp-server/slack-mcp-server/pkg/types"
 )
+
+// mentionPattern matches Slack user mentions in the format <@UXXXXXXXX>
+var mentionPattern = regexp.MustCompile(`<@(U[A-Z0-9]+)>`)
 
 // Client wraps the Slack API client to provide message and thread retrieval.
 type Client struct {
@@ -213,6 +217,39 @@ func convertMessage(msg *slack.Message) *types.Message {
 		ThreadTS:   msg.ThreadTimestamp,
 		ReplyCount: msg.ReplyCount,
 	}
+}
+
+// ExtractMentions extracts unique user IDs from Slack mentions in the given text.
+//
+// Slack mentions follow the format <@UXXXXXXXX> where U followed by alphanumeric
+// characters represents a user ID.
+//
+// Parameters:
+//   - text: The message text that may contain user mentions
+//
+// Returns a slice of unique user IDs found in the text. Returns an empty slice
+// if no mentions are found.
+func (c *Client) ExtractMentions(text string) []string {
+	matches := mentionPattern.FindAllStringSubmatch(text, -1)
+	if len(matches) == 0 {
+		return []string{}
+	}
+
+	// Use a map to deduplicate user IDs
+	seen := make(map[string]bool)
+	var userIDs []string
+
+	for _, match := range matches {
+		if len(match) >= 2 {
+			userID := match[1]
+			if !seen[userID] {
+				seen[userID] = true
+				userIDs = append(userIDs, userID)
+			}
+		}
+	}
+
+	return userIDs
 }
 
 // ClientInterface defines the interface for Slack client operations.
