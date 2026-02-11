@@ -112,6 +112,26 @@ func (c *Client) HasThread(message *types.Message) bool {
 	return message != nil && message.ReplyCount > 0
 }
 
+// GetCurrentUser retrieves information about the currently authenticated bot user.
+//
+// Parameters:
+//   - ctx: Context for cancellation and timeouts
+//
+// This method uses the auth.test API to identify the current user, then fetches
+// their full profile information. Results are cached via GetUserInfo.
+//
+// Returns the current user info, or an error if the authentication test fails.
+func (c *Client) GetCurrentUser(ctx context.Context) (*types.UserInfo, error) {
+	// Call auth.test to get the current user ID
+	authResp, err := c.api.AuthTestContext(ctx)
+	if err != nil {
+		return nil, wrapSlackError(err)
+	}
+
+	// Use GetUserInfo to fetch full user details (benefits from caching)
+	return c.GetUserInfo(ctx, authResp.UserID)
+}
+
 // GetUserInfo retrieves user information from Slack, using a cache to minimize API calls.
 //
 // Parameters:
