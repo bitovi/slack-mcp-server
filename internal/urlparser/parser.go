@@ -7,7 +7,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/slack-mcp-server/slack-mcp-server/pkg/types"
+	"github.com/Bitovi/slack-mcp-server/pkg/types"
 )
 
 // slackURLPattern matches Slack message URLs.

@@ -8,8 +8,8 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
-	slackclient "github.com/slack-mcp-server/slack-mcp-server/internal/slack"
-	"github.com/slack-mcp-server/slack-mcp-server/internal/tools"
+	slackclient "github.com/Bitovi/slack-mcp-server/internal/slack"
+	"github.com/Bitovi/slack-mcp-server/internal/tools"
 )
 
 const (
