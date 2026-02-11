@@ -200,7 +200,7 @@ func TestParse_InvalidURL(t *testing.T) {
 			name:        "Slack URL with long timestamp",
 			url:         "https://workspace.slack.com/archives/C01234567/p135551752300000800",
 			wantErrCode: types.ErrCodeInvalidURL,
-			wantErrMsg:  "invalid Slack message URL format",
+			wantErrMsg:  "invalid timestamp format: expected 16 digits",
 		},
 		{
 			name:        "malformed URL",

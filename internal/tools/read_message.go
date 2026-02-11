@@ -61,6 +61,9 @@ func (h *ReadMessageHandler) Handle(ctx context.Context, request mcp.CallToolReq
 		return h.handleError(err), nil
 	}
 
+	// Resolve user info for the primary message (populates UserName, DisplayName, RealName)
+	h.resolveUserForMessage(ctx, message)
+
 	// Build the result
 	result := &types.ReadMessageResult{
 		Message:   *message,
@@ -91,8 +94,23 @@ func (h *ReadMessageHandler) Handle(ctx context.Context, request mcp.CallToolReq
 			return h.handlePartialResult(result, err), nil
 		}
 
+		// Resolve user info for each message in the thread
+		for i := range thread {
+			h.resolveUserForMessage(ctx, &thread[i])
+		}
+
 		result.Thread = thread
 	}
+
+	// Extract mentioned users from all messages and build user mapping
+	result.UserMapping = h.buildUserMapping(ctx, result)
+
+	// Fetch the authenticated user's identity (graceful degradation on failure)
+	currentUser, err := h.slackClient.GetCurrentUser(ctx)
+	if err == nil && currentUser != nil {
+		result.CurrentUser = currentUser
+	}
+	// Note: If GetCurrentUser fails, we continue without current_user rather than failing
 
 	// Return the successful result as JSON content
 	return h.successResult(result)
@@ -174,6 +192,96 @@ func (h *ReadMessageHandler) successResult(result *types.ReadMessageResult) (*mc
 // This is a convenience method for registering the handler with the MCP server.
 func (h *ReadMessageHandler) HandleFunc() func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	return h.Handle
+}
+
+// resolveUserForMessage populates user name fields on a message by fetching user info.
+//
+// This method fetches user information for the message author and populates
+// the UserName, DisplayName, and RealName fields on the message. If the user
+// lookup fails, the message is left unchanged (graceful degradation).
+//
+// Parameters:
+//   - ctx: Context for cancellation and timeouts
+//   - msg: Pointer to the message to populate with user info
+//
+// This method does not return an error. If user resolution fails, the message
+// will simply not have user name fields populated.
+func (h *ReadMessageHandler) resolveUserForMessage(ctx context.Context, msg *types.Message) {
+	// Skip if message has no user ID (e.g., system messages)
+	if msg.User == "" {
+		return
+	}
+
+	// Fetch user info from Slack (or cache)
+	userInfo, err := h.slackClient.GetUserInfo(ctx, msg.User)
+	if err != nil {
+		// Graceful degradation: log the error but don't fail
+		// The message will be returned without user name fields
+		return
+	}
+
+	// Handle case where GetUserInfo returns nil without error
+	if userInfo == nil {
+		return
+	}
+
+	// Populate the user name fields on the message
+	msg.UserName = userInfo.Name
+	msg.DisplayName = userInfo.DisplayName
+	msg.RealName = userInfo.RealName
+}
+
+// buildUserMapping extracts mentioned user IDs from all messages and resolves them to UserInfo.
+//
+// This method scans the primary message and all thread messages for Slack mentions
+// (e.g., <@U06025G6B28>) and builds a mapping of user IDs to their UserInfo.
+// If a user lookup fails, that user is simply omitted from the mapping.
+//
+// Parameters:
+//   - ctx: Context for cancellation and timeouts
+//   - result: The ReadMessageResult containing the message and optional thread
+//
+// Returns a map of user IDs to UserInfo for all mentioned users, or nil if no mentions found.
+func (h *ReadMessageHandler) buildUserMapping(ctx context.Context, result *types.ReadMessageResult) map[string]types.UserInfo {
+	// Collect all unique mentioned user IDs
+	mentionedUserIDs := make(map[string]bool)
+
+	// Extract mentions from the primary message
+	for _, userID := range h.slackClient.ExtractMentions(result.Message.Text) {
+		mentionedUserIDs[userID] = true
+	}
+
+	// Extract mentions from all thread messages
+	for _, msg := range result.Thread {
+		for _, userID := range h.slackClient.ExtractMentions(msg.Text) {
+			mentionedUserIDs[userID] = true
+		}
+	}
+
+	// If no mentions found, return nil
+	if len(mentionedUserIDs) == 0 {
+		return nil
+	}
+
+	// Build the user mapping by resolving each mentioned user
+	userMapping := make(map[string]types.UserInfo)
+	for userID := range mentionedUserIDs {
+		userInfo, err := h.slackClient.GetUserInfo(ctx, userID)
+		if err != nil {
+			// Graceful degradation: skip users we can't resolve
+			continue
+		}
+		if userInfo != nil {
+			userMapping[userID] = *userInfo
+		}
+	}
+
+	// Return nil if no users were resolved (to avoid empty map in JSON)
+	if len(userMapping) == 0 {
+		return nil
+	}
+
+	return userMapping
 }
 
 // ReadMessage is a standalone function that processes a read_message request.

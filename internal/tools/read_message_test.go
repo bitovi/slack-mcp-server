@@ -15,9 +15,12 @@ import (
 
 // mockSlackClient is a test double for the Slack client interface.
 type mockSlackClient struct {
-	getMessage     func(ctx context.Context, channelID, timestamp string) (*types.Message, error)
-	getThread      func(ctx context.Context, channelID, threadTS string) ([]types.Message, error)
-	hasThread      func(message *types.Message) bool
+	getMessage      func(ctx context.Context, channelID, timestamp string) (*types.Message, error)
+	getThread       func(ctx context.Context, channelID, threadTS string) ([]types.Message, error)
+	hasThread       func(message *types.Message) bool
+	getUserInfo     func(ctx context.Context, userID string) (*types.UserInfo, error)
+	getCurrentUser  func(ctx context.Context) (*types.UserInfo, error)
+	extractMentions func(text string) []string
 }
 
 // GetMessage implements slackclient.ClientInterface.
@@ -43,6 +46,39 @@ func (m *mockSlackClient) HasThread(message *types.Message) bool {
 	}
 	// Default behavior: check ReplyCount > 0
 	return message != nil && message.ReplyCount > 0
+}
+
+// GetUserInfo implements slackclient.ClientInterface.
+func (m *mockSlackClient) GetUserInfo(ctx context.Context, userID string) (*types.UserInfo, error) {
+	if m.getUserInfo != nil {
+		return m.getUserInfo(ctx, userID)
+	}
+	// Default: return nil to simulate user not found
+	return nil, nil
+}
+
+// GetCurrentUser implements slackclient.ClientInterface.
+func (m *mockSlackClient) GetCurrentUser(ctx context.Context) (*types.UserInfo, error) {
+	if m.getCurrentUser != nil {
+		return m.getCurrentUser(ctx)
+	}
+	// Default: return a mock current user
+	return &types.UserInfo{
+		ID:          "UBOT12345",
+		Name:        "test_bot",
+		DisplayName: "Test Bot",
+		RealName:    "Test Bot",
+		IsBot:       true,
+	}, nil
+}
+
+// ExtractMentions implements slackclient.ClientInterface.
+func (m *mockSlackClient) ExtractMentions(text string) []string {
+	if m.extractMentions != nil {
+		return m.extractMentions(text)
+	}
+	// Default: return empty slice (no mentions)
+	return []string{}
 }
 
 // Ensure mockSlackClient implements the interface.
@@ -281,7 +317,7 @@ func TestReadMessageHandler_Handle_InvalidURL(t *testing.T) {
 		{
 			name:           "empty URL",
 			url:            "",
-			wantErrContain: "Invalid Slack URL",
+			wantErrContain: "url", // Handler checks for empty URL first with "missing required argument 'url'"
 		},
 		{
 			name:           "non-Slack URL",
@@ -720,5 +756,571 @@ func TestNewReadMessageHandler(t *testing.T) {
 
 	if handler.slackClient != mock {
 		t.Error("handler did not store the provided client")
+	}
+}
+
+// TestReadMessage_UserResolution tests that user resolution populates name fields on messages.
+func TestReadMessage_UserResolution(t *testing.T) {
+	tests := []struct {
+		name            string
+		url             string
+		mockMessage     *types.Message
+		mockThread      []types.Message
+		hasThread       bool
+		userInfoMap     map[string]*types.UserInfo
+		wantUserName    string
+		wantDisplayName string
+		wantRealName    string
+		wantThreadNames []string // Expected user_name for each thread message
+	}{
+		{
+			name: "single message user resolution",
+			url:  "https://workspace.slack.com/archives/C01234567/p1355517523000008",
+			mockMessage: &types.Message{
+				User:       "U12345678",
+				Text:       "Hello, world!",
+				Timestamp:  "1355517523.000008",
+				ReplyCount: 0,
+			},
+			hasThread: false,
+			userInfoMap: map[string]*types.UserInfo{
+				"U12345678": {
+					ID:          "U12345678",
+					Name:        "johndoe",
+					DisplayName: "John Doe",
+					RealName:    "John D. Doe",
+					IsBot:       false,
+				},
+			},
+			wantUserName:    "johndoe",
+			wantDisplayName: "John Doe",
+			wantRealName:    "John D. Doe",
+		},
+		{
+			name: "thread messages user resolution",
+			url:  "https://workspace.slack.com/archives/C01234567/p1355517523000008",
+			mockMessage: &types.Message{
+				User:       "U12345678",
+				Text:       "Thread parent",
+				Timestamp:  "1355517523.000008",
+				ReplyCount: 2,
+			},
+			mockThread: []types.Message{
+				{
+					User:      "U12345678",
+					Text:      "Thread parent",
+					Timestamp: "1355517523.000008",
+				},
+				{
+					User:      "U87654321",
+					Text:      "First reply",
+					Timestamp: "1355517524.000001",
+					ThreadTS:  "1355517523.000008",
+				},
+				{
+					User:      "UAAAAAAAA",
+					Text:      "Second reply",
+					Timestamp: "1355517525.000002",
+					ThreadTS:  "1355517523.000008",
+				},
+			},
+			hasThread: true,
+			userInfoMap: map[string]*types.UserInfo{
+				"U12345678": {
+					ID:          "U12345678",
+					Name:        "alice",
+					DisplayName: "Alice",
+					RealName:    "Alice Smith",
+					IsBot:       false,
+				},
+				"U87654321": {
+					ID:          "U87654321",
+					Name:        "bob",
+					DisplayName: "Bob",
+					RealName:    "Bob Jones",
+					IsBot:       false,
+				},
+				"UAAAAAAAA": {
+					ID:          "UAAAAAAAA",
+					Name:        "charlie",
+					DisplayName: "Charlie",
+					RealName:    "Charlie Brown",
+					IsBot:       false,
+				},
+			},
+			wantUserName:    "alice",
+			wantDisplayName: "Alice",
+			wantRealName:    "Alice Smith",
+			wantThreadNames: []string{"alice", "bob", "charlie"},
+		},
+		{
+			name: "bot user resolution",
+			url:  "https://workspace.slack.com/archives/C01234567/p1355517523000008",
+			mockMessage: &types.Message{
+				User:       "UBOTUSER1",
+				Text:       "Bot message",
+				Timestamp:  "1355517523.000008",
+				ReplyCount: 0,
+			},
+			hasThread: false,
+			userInfoMap: map[string]*types.UserInfo{
+				"UBOTUSER1": {
+					ID:          "UBOTUSER1",
+					Name:        "mybot",
+					DisplayName: "My Bot",
+					RealName:    "My Bot App",
+					IsBot:       true,
+				},
+			},
+			wantUserName:    "mybot",
+			wantDisplayName: "My Bot",
+			wantRealName:    "My Bot App",
+		},
+		{
+			name: "user resolution graceful failure",
+			url:  "https://workspace.slack.com/archives/C01234567/p1355517523000008",
+			mockMessage: &types.Message{
+				User:       "U12345678",
+				Text:       "Message from unknown user",
+				Timestamp:  "1355517523.000008",
+				ReplyCount: 0,
+			},
+			hasThread:       false,
+			userInfoMap:     map[string]*types.UserInfo{}, // No user info available
+			wantUserName:    "",                           // Should be empty, not fail
+			wantDisplayName: "",
+			wantRealName:    "",
+		},
+		{
+			name: "system message with empty user field",
+			url:  "https://workspace.slack.com/archives/C01234567/p1355517523000008",
+			mockMessage: &types.Message{
+				User:       "", // System message has no user
+				Text:       "Channel joined",
+				Timestamp:  "1355517523.000008",
+				ReplyCount: 0,
+			},
+			hasThread:       false,
+			userInfoMap:     map[string]*types.UserInfo{},
+			wantUserName:    "", // Should handle gracefully
+			wantDisplayName: "",
+			wantRealName:    "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := &mockSlackClient{
+				getMessage: func(ctx context.Context, channelID, timestamp string) (*types.Message, error) {
+					return tt.mockMessage, nil
+				},
+				getThread: func(ctx context.Context, channelID, threadTS string) ([]types.Message, error) {
+					return tt.mockThread, nil
+				},
+				hasThread: func(message *types.Message) bool {
+					return tt.hasThread
+				},
+				getUserInfo: func(ctx context.Context, userID string) (*types.UserInfo, error) {
+					if info, ok := tt.userInfoMap[userID]; ok {
+						return info, nil
+					}
+					return nil, nil // User not found, graceful degradation
+				},
+			}
+
+			handler := NewReadMessageHandler(mock)
+			request := createToolRequest(map[string]interface{}{
+				"url": tt.url,
+			})
+
+			result, err := handler.Handle(context.Background(), request)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if result.IsError {
+				t.Fatalf("expected success, got error: %+v", result.Content)
+			}
+
+			// Parse the result JSON
+			if len(result.Content) == 0 {
+				t.Fatal("expected content in result")
+			}
+
+			textContent, ok := result.Content[0].(mcp.TextContent)
+			if !ok {
+				t.Fatalf("expected TextContent, got %T", result.Content[0])
+			}
+
+			var readResult types.ReadMessageResult
+			if err := json.Unmarshal([]byte(textContent.Text), &readResult); err != nil {
+				t.Fatalf("failed to parse result JSON: %v", err)
+			}
+
+			// Verify primary message user resolution
+			if readResult.Message.UserName != tt.wantUserName {
+				t.Errorf("Message.UserName = %q, want %q", readResult.Message.UserName, tt.wantUserName)
+			}
+			if readResult.Message.DisplayName != tt.wantDisplayName {
+				t.Errorf("Message.DisplayName = %q, want %q", readResult.Message.DisplayName, tt.wantDisplayName)
+			}
+			if readResult.Message.RealName != tt.wantRealName {
+				t.Errorf("Message.RealName = %q, want %q", readResult.Message.RealName, tt.wantRealName)
+			}
+
+			// Verify thread message user resolution if applicable
+			if tt.wantThreadNames != nil {
+				if len(readResult.Thread) != len(tt.wantThreadNames) {
+					t.Fatalf("Thread length = %d, want %d", len(readResult.Thread), len(tt.wantThreadNames))
+				}
+				for i, wantName := range tt.wantThreadNames {
+					if readResult.Thread[i].UserName != wantName {
+						t.Errorf("Thread[%d].UserName = %q, want %q", i, readResult.Thread[i].UserName, wantName)
+					}
+				}
+			}
+		})
+	}
+}
+
+// TestReadMessage_MentionMapping tests that mentioned users are mapped correctly.
+func TestReadMessage_MentionMapping(t *testing.T) {
+	tests := []struct {
+		name             string
+		url              string
+		mockMessage      *types.Message
+		mockThread       []types.Message
+		hasThread        bool
+		extractedIDs     map[string][]string // text -> extracted user IDs
+		userInfoMap      map[string]*types.UserInfo
+		wantMappingCount int
+		wantMappedUsers  []string // Expected user IDs in mapping
+	}{
+		{
+			name: "single mention in message",
+			url:  "https://workspace.slack.com/archives/C01234567/p1355517523000008",
+			mockMessage: &types.Message{
+				User:       "U12345678",
+				Text:       "Hey <@U87654321>, can you help?",
+				Timestamp:  "1355517523.000008",
+				ReplyCount: 0,
+			},
+			hasThread: false,
+			extractedIDs: map[string][]string{
+				"Hey <@U87654321>, can you help?": {"U87654321"},
+			},
+			userInfoMap: map[string]*types.UserInfo{
+				"U12345678": {ID: "U12345678", Name: "alice"},
+				"U87654321": {ID: "U87654321", Name: "bob", DisplayName: "Bob", RealName: "Bob Jones"},
+			},
+			wantMappingCount: 1,
+			wantMappedUsers:  []string{"U87654321"},
+		},
+		{
+			name: "multiple mentions in message",
+			url:  "https://workspace.slack.com/archives/C01234567/p1355517523000008",
+			mockMessage: &types.Message{
+				User:       "U12345678",
+				Text:       "Hey <@U87654321> and <@UAAAAAAAA>, please review",
+				Timestamp:  "1355517523.000008",
+				ReplyCount: 0,
+			},
+			hasThread: false,
+			extractedIDs: map[string][]string{
+				"Hey <@U87654321> and <@UAAAAAAAA>, please review": {"U87654321", "UAAAAAAAA"},
+			},
+			userInfoMap: map[string]*types.UserInfo{
+				"U12345678": {ID: "U12345678", Name: "alice"},
+				"U87654321": {ID: "U87654321", Name: "bob"},
+				"UAAAAAAAA": {ID: "UAAAAAAAA", Name: "charlie"},
+			},
+			wantMappingCount: 2,
+			wantMappedUsers:  []string{"U87654321", "UAAAAAAAA"},
+		},
+		{
+			name: "mentions in thread messages",
+			url:  "https://workspace.slack.com/archives/C01234567/p1355517523000008",
+			mockMessage: &types.Message{
+				User:       "U12345678",
+				Text:       "Thread parent",
+				Timestamp:  "1355517523.000008",
+				ReplyCount: 1,
+			},
+			mockThread: []types.Message{
+				{
+					User:      "U12345678",
+					Text:      "Thread parent",
+					Timestamp: "1355517523.000008",
+				},
+				{
+					User:      "U87654321",
+					Text:      "Hey <@UAAAAAAAA>, what do you think?",
+					Timestamp: "1355517524.000001",
+					ThreadTS:  "1355517523.000008",
+				},
+			},
+			hasThread: true,
+			extractedIDs: map[string][]string{
+				"Thread parent":                           {},
+				"Hey <@UAAAAAAAA>, what do you think?": {"UAAAAAAAA"},
+			},
+			userInfoMap: map[string]*types.UserInfo{
+				"U12345678": {ID: "U12345678", Name: "alice"},
+				"U87654321": {ID: "U87654321", Name: "bob"},
+				"UAAAAAAAA": {ID: "UAAAAAAAA", Name: "charlie"},
+			},
+			wantMappingCount: 1,
+			wantMappedUsers:  []string{"UAAAAAAAA"},
+		},
+		{
+			name: "no mentions in message",
+			url:  "https://workspace.slack.com/archives/C01234567/p1355517523000008",
+			mockMessage: &types.Message{
+				User:       "U12345678",
+				Text:       "Hello, world!",
+				Timestamp:  "1355517523.000008",
+				ReplyCount: 0,
+			},
+			hasThread: false,
+			extractedIDs: map[string][]string{
+				"Hello, world!": {},
+			},
+			userInfoMap: map[string]*types.UserInfo{
+				"U12345678": {ID: "U12345678", Name: "alice"},
+			},
+			wantMappingCount: 0,
+			wantMappedUsers:  nil,
+		},
+		{
+			name: "mentioned user not found gracefully",
+			url:  "https://workspace.slack.com/archives/C01234567/p1355517523000008",
+			mockMessage: &types.Message{
+				User:       "U12345678",
+				Text:       "Hey <@UDELETED1>, are you there?",
+				Timestamp:  "1355517523.000008",
+				ReplyCount: 0,
+			},
+			hasThread: false,
+			extractedIDs: map[string][]string{
+				"Hey <@UDELETED1>, are you there?": {"UDELETED1"},
+			},
+			userInfoMap: map[string]*types.UserInfo{
+				"U12345678": {ID: "U12345678", Name: "alice"},
+				// UDELETED1 is not in the map - simulates deleted user
+			},
+			wantMappingCount: 0, // Should gracefully skip unresolvable users
+			wantMappedUsers:  nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := &mockSlackClient{
+				getMessage: func(ctx context.Context, channelID, timestamp string) (*types.Message, error) {
+					return tt.mockMessage, nil
+				},
+				getThread: func(ctx context.Context, channelID, threadTS string) ([]types.Message, error) {
+					return tt.mockThread, nil
+				},
+				hasThread: func(message *types.Message) bool {
+					return tt.hasThread
+				},
+				getUserInfo: func(ctx context.Context, userID string) (*types.UserInfo, error) {
+					if info, ok := tt.userInfoMap[userID]; ok {
+						return info, nil
+					}
+					return nil, nil // User not found
+				},
+				extractMentions: func(text string) []string {
+					if ids, ok := tt.extractedIDs[text]; ok {
+						return ids
+					}
+					return []string{}
+				},
+			}
+
+			handler := NewReadMessageHandler(mock)
+			request := createToolRequest(map[string]interface{}{
+				"url": tt.url,
+			})
+
+			result, err := handler.Handle(context.Background(), request)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if result.IsError {
+				t.Fatalf("expected success, got error: %+v", result.Content)
+			}
+
+			textContent, ok := result.Content[0].(mcp.TextContent)
+			if !ok {
+				t.Fatalf("expected TextContent, got %T", result.Content[0])
+			}
+
+			var readResult types.ReadMessageResult
+			if err := json.Unmarshal([]byte(textContent.Text), &readResult); err != nil {
+				t.Fatalf("failed to parse result JSON: %v", err)
+			}
+
+			// Verify user mapping count
+			if len(readResult.UserMapping) != tt.wantMappingCount {
+				t.Errorf("UserMapping length = %d, want %d", len(readResult.UserMapping), tt.wantMappingCount)
+			}
+
+			// Verify expected users are in the mapping
+			for _, wantUserID := range tt.wantMappedUsers {
+				if _, ok := readResult.UserMapping[wantUserID]; !ok {
+					t.Errorf("UserMapping missing expected user %q", wantUserID)
+				}
+			}
+		})
+	}
+}
+
+// TestReadMessage_CurrentUser tests that the authenticated user is included in the response.
+func TestReadMessage_CurrentUser(t *testing.T) {
+	tests := []struct {
+		name            string
+		url             string
+		mockMessage     *types.Message
+		currentUser     *types.UserInfo
+		currentUserErr  error
+		wantCurrentUser bool
+		wantUserID      string
+		wantUserName    string
+		wantIsBot       bool
+	}{
+		{
+			name: "current user included in response",
+			url:  "https://workspace.slack.com/archives/C01234567/p1355517523000008",
+			mockMessage: &types.Message{
+				User:       "U12345678",
+				Text:       "Hello, world!",
+				Timestamp:  "1355517523.000008",
+				ReplyCount: 0,
+			},
+			currentUser: &types.UserInfo{
+				ID:          "UBOTUSER1",
+				Name:        "my_slack_bot",
+				DisplayName: "My Slack Bot",
+				RealName:    "My Slack Bot",
+				IsBot:       true,
+			},
+			wantCurrentUser: true,
+			wantUserID:      "UBOTUSER1",
+			wantUserName:    "my_slack_bot",
+			wantIsBot:       true,
+		},
+		{
+			name: "current user fetch failure graceful degradation",
+			url:  "https://workspace.slack.com/archives/C01234567/p1355517523000008",
+			mockMessage: &types.Message{
+				User:       "U12345678",
+				Text:       "Hello, world!",
+				Timestamp:  "1355517523.000008",
+				ReplyCount: 0,
+			},
+			currentUser:     nil,
+			currentUserErr:  types.NewSlackError(types.ErrCodeRateLimited, "rate limited"),
+			wantCurrentUser: false, // Should be nil, not fail
+		},
+		{
+			name: "current user nil without error",
+			url:  "https://workspace.slack.com/archives/C01234567/p1355517523000008",
+			mockMessage: &types.Message{
+				User:       "U12345678",
+				Text:       "Hello, world!",
+				Timestamp:  "1355517523.000008",
+				ReplyCount: 0,
+			},
+			currentUser:     nil,
+			currentUserErr:  nil,
+			wantCurrentUser: false,
+		},
+		{
+			name: "non-bot current user",
+			url:  "https://workspace.slack.com/archives/C01234567/p1355517523000008",
+			mockMessage: &types.Message{
+				User:       "U12345678",
+				Text:       "Hello, world!",
+				Timestamp:  "1355517523.000008",
+				ReplyCount: 0,
+			},
+			currentUser: &types.UserInfo{
+				ID:          "UREGUSER1",
+				Name:        "regular_user",
+				DisplayName: "Regular User",
+				RealName:    "Regular User",
+				IsBot:       false,
+			},
+			wantCurrentUser: true,
+			wantUserID:      "UREGUSER1",
+			wantUserName:    "regular_user",
+			wantIsBot:       false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := &mockSlackClient{
+				getMessage: func(ctx context.Context, channelID, timestamp string) (*types.Message, error) {
+					return tt.mockMessage, nil
+				},
+				getThread: func(ctx context.Context, channelID, threadTS string) ([]types.Message, error) {
+					return nil, nil
+				},
+				hasThread: func(message *types.Message) bool {
+					return false
+				},
+				getCurrentUser: func(ctx context.Context) (*types.UserInfo, error) {
+					return tt.currentUser, tt.currentUserErr
+				},
+			}
+
+			handler := NewReadMessageHandler(mock)
+			request := createToolRequest(map[string]interface{}{
+				"url": tt.url,
+			})
+
+			result, err := handler.Handle(context.Background(), request)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if result.IsError {
+				t.Fatalf("expected success, got error: %+v", result.Content)
+			}
+
+			textContent, ok := result.Content[0].(mcp.TextContent)
+			if !ok {
+				t.Fatalf("expected TextContent, got %T", result.Content[0])
+			}
+
+			var readResult types.ReadMessageResult
+			if err := json.Unmarshal([]byte(textContent.Text), &readResult); err != nil {
+				t.Fatalf("failed to parse result JSON: %v", err)
+			}
+
+			// Verify current user presence
+			if tt.wantCurrentUser {
+				if readResult.CurrentUser == nil {
+					t.Fatal("expected CurrentUser, got nil")
+				}
+				if readResult.CurrentUser.ID != tt.wantUserID {
+					t.Errorf("CurrentUser.ID = %q, want %q", readResult.CurrentUser.ID, tt.wantUserID)
+				}
+				if readResult.CurrentUser.Name != tt.wantUserName {
+					t.Errorf("CurrentUser.Name = %q, want %q", readResult.CurrentUser.Name, tt.wantUserName)
+				}
+				if readResult.CurrentUser.IsBot != tt.wantIsBot {
+					t.Errorf("CurrentUser.IsBot = %v, want %v", readResult.CurrentUser.IsBot, tt.wantIsBot)
+				}
+			} else {
+				if readResult.CurrentUser != nil {
+					t.Errorf("expected CurrentUser to be nil, got %+v", readResult.CurrentUser)
+				}
+			}
+		})
 	}
 }

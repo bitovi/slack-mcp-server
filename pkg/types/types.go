@@ -1,10 +1,36 @@
 // Package types provides shared type definitions for the Slack MCP server.
 package types
 
+// UserInfo contains resolved user information from Slack.
+type UserInfo struct {
+	// ID is the Slack user ID (e.g., "U06025G6B28").
+	ID string `json:"id"`
+	// Name is the username (handle) without the @ symbol.
+	Name string `json:"name"`
+	// DisplayName is the user's display name, which may differ from their username.
+	DisplayName string `json:"display_name"`
+	// RealName is the user's full name.
+	RealName string `json:"real_name"`
+	// IsBot indicates whether this user is a bot account.
+	IsBot bool `json:"is_bot"`
+	// IsDeleted indicates whether this user account has been deleted.
+	// Only set when true.
+	IsDeleted bool `json:"is_deleted,omitempty"`
+}
+
 // Message represents a Slack message.
 type Message struct {
 	// User is the Slack user ID of the message author.
 	User string `json:"user"`
+	// UserName is the username (handle) of the message author, resolved from the user ID.
+	// Empty if user resolution was not performed or failed.
+	UserName string `json:"user_name,omitempty"`
+	// DisplayName is the display name of the message author.
+	// Empty if user resolution was not performed or failed.
+	DisplayName string `json:"display_name,omitempty"`
+	// RealName is the full name of the message author.
+	// Empty if user resolution was not performed or failed.
+	RealName string `json:"real_name,omitempty"`
 	// Text is the message content.
 	Text string `json:"text"`
 	// Timestamp is the message timestamp in Slack API format (e.g., "1234567890.123456").
@@ -44,6 +70,12 @@ type ReadMessageResult struct {
 	Thread []Message `json:"thread,omitempty"`
 	// ChannelID is the Slack channel where the message was posted.
 	ChannelID string `json:"channel_id"`
+	// CurrentUser contains the authenticated bot's user information.
+	// Nil if user lookup was not performed or failed.
+	CurrentUser *UserInfo `json:"current_user,omitempty"`
+	// UserMapping maps user IDs to user info for all users mentioned in message text.
+	// Empty if no mentions were found or user resolution was not performed.
+	UserMapping map[string]UserInfo `json:"user_mapping,omitempty"`
 }
 
 // SlackError represents an error from the Slack API or URL parsing.
