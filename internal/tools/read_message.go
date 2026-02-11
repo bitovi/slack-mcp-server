@@ -8,9 +8,9 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 
-	slackclient "github.com/slack-mcp-server/slack-mcp-server/internal/slack"
-	"github.com/slack-mcp-server/slack-mcp-server/internal/urlparser"
-	"github.com/slack-mcp-server/slack-mcp-server/pkg/types"
+	slackclient "github.com/Bitovi/slack-mcp-server/internal/slack"
+	"github.com/Bitovi/slack-mcp-server/internal/urlparser"
+	"github.com/Bitovi/slack-mcp-server/pkg/types"
 )
 
 // ReadMessageHandler handles the read_message MCP tool requests.
@@ -39,9 +39,14 @@ func NewReadMessageHandler(client slackclient.ClientInterface) *ReadMessageHandl
 // or an error result if the operation fails.
 func (h *ReadMessageHandler) Handle(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	// Extract the URL argument from the request
-	url := mcp.ExtractString(request.Params.Arguments, "url")
-	if url == "" {
+	urlArg, ok := request.Params.Arguments["url"]
+	if !ok {
 		return mcp.NewToolResultError("missing required argument 'url'"), nil
+	}
+	
+	url, ok := urlArg.(string)
+	if !ok {
+		return mcp.NewToolResultError("argument 'url' must be a string"), nil
 	}
 
 	// Parse the Slack URL to extract channel ID and timestamps

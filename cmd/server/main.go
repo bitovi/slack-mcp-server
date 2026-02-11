@@ -8,7 +8,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/slack-mcp-server/slack-mcp-server/internal/server"
+	"github.com/Bitovi/slack-mcp-server/internal/server"
 )
 
 const (

@@ -1,6 +1,8 @@
-module github.com/slack-mcp-server/slack-mcp-server
+module github.com/Bitovi/slack-mcp-server
 
 go 1.23
+
+toolchain go1.24.3
 
 require (
 	github.com/mark3labs/mcp-go v0.20.1
