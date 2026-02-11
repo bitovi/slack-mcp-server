@@ -39,9 +39,9 @@ func NewReadMessageHandler(client slackclient.ClientInterface) *ReadMessageHandl
 // or an error result if the operation fails.
 func (h *ReadMessageHandler) Handle(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	// Extract the URL argument from the request
-	url, err := request.RequireString("url")
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("missing required argument 'url': %v", err)), nil
+	url := mcp.ExtractString(request.Params.Arguments, "url")
+	if url == "" {
+		return mcp.NewToolResultError("missing required argument 'url'"), nil
 	}
 
 	// Parse the Slack URL to extract channel ID and timestamps
@@ -169,6 +169,43 @@ func (h *ReadMessageHandler) successResult(result *types.ReadMessageResult) (*mc
 // This is a convenience method for registering the handler with the MCP server.
 func (h *ReadMessageHandler) HandleFunc() func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	return h.Handle
+}
+
+// resolveUserForMessage populates user name fields on a message by fetching user info.
+//
+// This method fetches user information for the message author and populates
+// the UserName, DisplayName, and RealName fields on the message. If the user
+// lookup fails, the message is left unchanged (graceful degradation).
+//
+// Parameters:
+//   - ctx: Context for cancellation and timeouts
+//   - msg: Pointer to the message to populate with user info
+//
+// This method does not return an error. If user resolution fails, the message
+// will simply not have user name fields populated.
+func (h *ReadMessageHandler) resolveUserForMessage(ctx context.Context, msg *types.Message) {
+	// Skip if message has no user ID (e.g., system messages)
+	if msg.User == "" {
+		return
+	}
+
+	// Fetch user info from Slack (or cache)
+	userInfo, err := h.slackClient.GetUserInfo(ctx, msg.User)
+	if err != nil {
+		// Graceful degradation: log the error but don't fail
+		// The message will be returned without user name fields
+		return
+	}
+
+	// Handle case where GetUserInfo returns nil without error
+	if userInfo == nil {
+		return
+	}
+
+	// Populate the user name fields on the message
+	msg.UserName = userInfo.Name
+	msg.DisplayName = userInfo.DisplayName
+	msg.RealName = userInfo.RealName
 }
 
 // ReadMessage is a standalone function that processes a read_message request.
