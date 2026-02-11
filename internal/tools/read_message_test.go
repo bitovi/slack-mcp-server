@@ -15,12 +15,13 @@ import (
 
 // mockSlackClient is a test double for the Slack client interface.
 type mockSlackClient struct {
-	getMessage      func(ctx context.Context, channelID, timestamp string) (*types.Message, error)
-	getThread       func(ctx context.Context, channelID, threadTS string) ([]types.Message, error)
-	hasThread       func(message *types.Message) bool
-	getUserInfo     func(ctx context.Context, userID string) (*types.UserInfo, error)
-	getCurrentUser  func(ctx context.Context) (*types.UserInfo, error)
-	extractMentions func(text string) []string
+	getMessage        func(ctx context.Context, channelID, timestamp string) (*types.Message, error)
+	getThread         func(ctx context.Context, channelID, threadTS string) ([]types.Message, error)
+	getChannelHistory func(ctx context.Context, channelID string, limit int, oldest, latest string) ([]types.Message, bool, error)
+	hasThread         func(message *types.Message) bool
+	getUserInfo       func(ctx context.Context, userID string) (*types.UserInfo, error)
+	getCurrentUser    func(ctx context.Context) (*types.UserInfo, error)
+	extractMentions   func(text string) []string
 }
 
 // GetMessage implements slackclient.ClientInterface.
@@ -37,6 +38,14 @@ func (m *mockSlackClient) GetThread(ctx context.Context, channelID, threadTS str
 		return m.getThread(ctx, channelID, threadTS)
 	}
 	return nil, types.NewSlackError(types.ErrCodeMessageNotFound, "mock: GetThread not configured")
+}
+
+// GetChannelHistory implements slackclient.ClientInterface.
+func (m *mockSlackClient) GetChannelHistory(ctx context.Context, channelID string, limit int, oldest, latest string) ([]types.Message, bool, error) {
+	if m.getChannelHistory != nil {
+		return m.getChannelHistory(ctx, channelID, limit, oldest, latest)
+	}
+	return nil, false, types.NewSlackError(types.ErrCodeChannelNotFound, "mock: GetChannelHistory not configured")
 }
 
 // HasThread implements slackclient.ClientInterface.
