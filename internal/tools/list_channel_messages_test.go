@@ -651,3 +651,280 @@ func TestListChannelMessagesHandler_Handle_SlackErrors(t *testing.T) {
 		})
 	}
 }
+
+// TestListChannelMessagesHandler_Handle_UserMapping tests that mentioned users are resolved and included in user_mapping.
+func TestListChannelMessagesHandler_Handle_UserMapping(t *testing.T) {
+	tests := []struct {
+		name             string
+		channelID        string
+		mockMessages     []types.Message
+		extractedIDs     map[string][]string // text -> extracted user IDs
+		userInfoMap      map[string]*types.UserInfo
+		wantMappingCount int
+		wantMappedUsers  []string // Expected user IDs in mapping
+	}{
+		{
+			name:      "single mention in message",
+			channelID: "C01234567",
+			mockMessages: []types.Message{
+				{
+					User:      "U12345678",
+					Text:      "Hey <@U87654321>, can you help?",
+					Timestamp: "1355517523.000008",
+				},
+			},
+			extractedIDs: map[string][]string{
+				"Hey <@U87654321>, can you help?": {"U87654321"},
+			},
+			userInfoMap: map[string]*types.UserInfo{
+				"U12345678": {ID: "U12345678", Name: "alice"},
+				"U87654321": {ID: "U87654321", Name: "bob", DisplayName: "Bob", RealName: "Bob Jones"},
+			},
+			wantMappingCount: 1,
+			wantMappedUsers:  []string{"U87654321"},
+		},
+		{
+			name:      "multiple mentions in message",
+			channelID: "C01234567",
+			mockMessages: []types.Message{
+				{
+					User:      "U12345678",
+					Text:      "Hey <@U87654321> and <@UAAAAAAAA>, please review",
+					Timestamp: "1355517523.000008",
+				},
+			},
+			extractedIDs: map[string][]string{
+				"Hey <@U87654321> and <@UAAAAAAAA>, please review": {"U87654321", "UAAAAAAAA"},
+			},
+			userInfoMap: map[string]*types.UserInfo{
+				"U12345678": {ID: "U12345678", Name: "alice"},
+				"U87654321": {ID: "U87654321", Name: "bob"},
+				"UAAAAAAAA": {ID: "UAAAAAAAA", Name: "charlie"},
+			},
+			wantMappingCount: 2,
+			wantMappedUsers:  []string{"U87654321", "UAAAAAAAA"},
+		},
+		{
+			name:      "mentions across multiple messages",
+			channelID: "C01234567",
+			mockMessages: []types.Message{
+				{
+					User:      "U12345678",
+					Text:      "Hey <@U87654321>, check this out",
+					Timestamp: "1355517523.000008",
+				},
+				{
+					User:      "U87654321",
+					Text:      "Thanks <@UAAAAAAAA>, I'll take a look",
+					Timestamp: "1355517524.000009",
+				},
+			},
+			extractedIDs: map[string][]string{
+				"Hey <@U87654321>, check this out":       {"U87654321"},
+				"Thanks <@UAAAAAAAA>, I'll take a look": {"UAAAAAAAA"},
+			},
+			userInfoMap: map[string]*types.UserInfo{
+				"U12345678": {ID: "U12345678", Name: "alice"},
+				"U87654321": {ID: "U87654321", Name: "bob"},
+				"UAAAAAAAA": {ID: "UAAAAAAAA", Name: "charlie"},
+			},
+			wantMappingCount: 2,
+			wantMappedUsers:  []string{"U87654321", "UAAAAAAAA"},
+		},
+		{
+			name:      "duplicate mentions deduplicated",
+			channelID: "C01234567",
+			mockMessages: []types.Message{
+				{
+					User:      "U12345678",
+					Text:      "Hey <@U87654321>, what do you think?",
+					Timestamp: "1355517523.000008",
+				},
+				{
+					User:      "UAAAAAAAA",
+					Text:      "I agree with <@U87654321>",
+					Timestamp: "1355517524.000009",
+				},
+			},
+			extractedIDs: map[string][]string{
+				"Hey <@U87654321>, what do you think?": {"U87654321"},
+				"I agree with <@U87654321>":            {"U87654321"},
+			},
+			userInfoMap: map[string]*types.UserInfo{
+				"U12345678": {ID: "U12345678", Name: "alice"},
+				"U87654321": {ID: "U87654321", Name: "bob"},
+				"UAAAAAAAA": {ID: "UAAAAAAAA", Name: "charlie"},
+			},
+			wantMappingCount: 1, // Bob should only appear once
+			wantMappedUsers:  []string{"U87654321"},
+		},
+		{
+			name:      "no mentions in messages",
+			channelID: "C01234567",
+			mockMessages: []types.Message{
+				{
+					User:      "U12345678",
+					Text:      "Hello, world!",
+					Timestamp: "1355517523.000008",
+				},
+				{
+					User:      "U87654321",
+					Text:      "Hi there!",
+					Timestamp: "1355517524.000009",
+				},
+			},
+			extractedIDs: map[string][]string{
+				"Hello, world!": {},
+				"Hi there!":     {},
+			},
+			userInfoMap: map[string]*types.UserInfo{
+				"U12345678": {ID: "U12345678", Name: "alice"},
+				"U87654321": {ID: "U87654321", Name: "bob"},
+			},
+			wantMappingCount: 0,
+			wantMappedUsers:  nil,
+		},
+		{
+			name:      "mentioned user not found gracefully (deleted user)",
+			channelID: "C01234567",
+			mockMessages: []types.Message{
+				{
+					User:      "U12345678",
+					Text:      "Hey <@UDELETED1>, are you there?",
+					Timestamp: "1355517523.000008",
+				},
+			},
+			extractedIDs: map[string][]string{
+				"Hey <@UDELETED1>, are you there?": {"UDELETED1"},
+			},
+			userInfoMap: map[string]*types.UserInfo{
+				"U12345678": {ID: "U12345678", Name: "alice"},
+				// UDELETED1 is not in the map - simulates deleted user
+			},
+			wantMappingCount: 0, // Should gracefully skip unresolvable users
+			wantMappedUsers:  nil,
+		},
+		{
+			name:      "mixed resolvable and deleted users",
+			channelID: "C01234567",
+			mockMessages: []types.Message{
+				{
+					User:      "U12345678",
+					Text:      "Hey <@U87654321> and <@UDELETED1>, please review",
+					Timestamp: "1355517523.000008",
+				},
+			},
+			extractedIDs: map[string][]string{
+				"Hey <@U87654321> and <@UDELETED1>, please review": {"U87654321", "UDELETED1"},
+			},
+			userInfoMap: map[string]*types.UserInfo{
+				"U12345678": {ID: "U12345678", Name: "alice"},
+				"U87654321": {ID: "U87654321", Name: "bob", DisplayName: "Bob", RealName: "Bob Jones"},
+				// UDELETED1 is not in the map - simulates deleted user
+			},
+			wantMappingCount: 1, // Only bob should be in the mapping
+			wantMappedUsers:  []string{"U87654321"},
+		},
+		{
+			name:      "user mapping includes full user info",
+			channelID: "C01234567",
+			mockMessages: []types.Message{
+				{
+					User:      "U12345678",
+					Text:      "Hey <@U87654321>, can you help?",
+					Timestamp: "1355517523.000008",
+				},
+			},
+			extractedIDs: map[string][]string{
+				"Hey <@U87654321>, can you help?": {"U87654321"},
+			},
+			userInfoMap: map[string]*types.UserInfo{
+				"U12345678": {ID: "U12345678", Name: "alice"},
+				"U87654321": {
+					ID:          "U87654321",
+					Name:        "bob",
+					DisplayName: "Robert Smith",
+					RealName:    "Robert J. Smith",
+					IsBot:       false,
+				},
+			},
+			wantMappingCount: 1,
+			wantMappedUsers:  []string{"U87654321"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := &mockSlackClient{
+				getChannelHistory: func(ctx context.Context, channelID string, limit int, oldest, latest string) ([]types.Message, bool, error) {
+					return tt.mockMessages, false, nil
+				},
+				getUserInfo: func(ctx context.Context, userID string) (*types.UserInfo, error) {
+					if info, ok := tt.userInfoMap[userID]; ok {
+						return info, nil
+					}
+					return nil, nil // User not found
+				},
+				extractMentions: func(text string) []string {
+					if ids, ok := tt.extractedIDs[text]; ok {
+						return ids
+					}
+					return []string{}
+				},
+			}
+
+			handler := NewListChannelMessagesHandler(mock)
+			request := createListChannelMessagesRequest(map[string]interface{}{
+				"channel_id": tt.channelID,
+			})
+
+			result, err := handler.Handle(context.Background(), request)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if result.IsError {
+				t.Fatalf("expected success, got error: %+v", result.Content)
+			}
+
+			textContent, ok := result.Content[0].(mcp.TextContent)
+			if !ok {
+				t.Fatalf("expected TextContent, got %T", result.Content[0])
+			}
+
+			var listResult types.ListChannelMessagesResult
+			if err := json.Unmarshal([]byte(textContent.Text), &listResult); err != nil {
+				t.Fatalf("failed to parse result JSON: %v", err)
+			}
+
+			// Verify user mapping count
+			if len(listResult.UserMapping) != tt.wantMappingCount {
+				t.Errorf("UserMapping length = %d, want %d", len(listResult.UserMapping), tt.wantMappingCount)
+			}
+
+			// Verify expected users are in the mapping
+			for _, wantUserID := range tt.wantMappedUsers {
+				userInfo, ok := listResult.UserMapping[wantUserID]
+				if !ok {
+					t.Errorf("UserMapping missing expected user %q", wantUserID)
+					continue
+				}
+
+				// Verify the user info has the expected data
+				expectedInfo := tt.userInfoMap[wantUserID]
+				if userInfo.ID != expectedInfo.ID {
+					t.Errorf("UserMapping[%q].ID = %q, want %q", wantUserID, userInfo.ID, expectedInfo.ID)
+				}
+				if userInfo.Name != expectedInfo.Name {
+					t.Errorf("UserMapping[%q].Name = %q, want %q", wantUserID, userInfo.Name, expectedInfo.Name)
+				}
+				if userInfo.DisplayName != expectedInfo.DisplayName {
+					t.Errorf("UserMapping[%q].DisplayName = %q, want %q", wantUserID, userInfo.DisplayName, expectedInfo.DisplayName)
+				}
+				if userInfo.RealName != expectedInfo.RealName {
+					t.Errorf("UserMapping[%q].RealName = %q, want %q", wantUserID, userInfo.RealName, expectedInfo.RealName)
+				}
+			}
+		})
+	}
+}
