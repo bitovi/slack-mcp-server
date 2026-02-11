@@ -49,6 +49,11 @@ func (h *ReadMessageHandler) Handle(ctx context.Context, request mcp.CallToolReq
 		return mcp.NewToolResultError("argument 'url' must be a string"), nil
 	}
 
+	// Check for empty URL before parsing
+	if url == "" {
+		return mcp.NewToolResultError("missing required argument 'url'"), nil
+	}
+
 	// Parse the Slack URL to extract channel ID and timestamps
 	parsedURL, err := urlparser.Parse(url)
 	if err != nil {
