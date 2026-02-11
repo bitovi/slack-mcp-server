@@ -56,6 +56,9 @@ func (h *ReadMessageHandler) Handle(ctx context.Context, request mcp.CallToolReq
 		return h.handleError(err), nil
 	}
 
+	// Resolve user info for the primary message (populates UserName, DisplayName, RealName)
+	h.resolveUserForMessage(ctx, message)
+
 	// Build the result
 	result := &types.ReadMessageResult{
 		Message:   *message,
@@ -84,6 +87,11 @@ func (h *ReadMessageHandler) Handle(ctx context.Context, request mcp.CallToolReq
 			// If thread fetch fails, still return the message but note the error
 			// This provides partial results rather than complete failure
 			return h.handlePartialResult(result, err), nil
+		}
+
+		// Resolve user info for each message in the thread
+		for i := range thread {
+			h.resolveUserForMessage(ctx, &thread[i])
 		}
 
 		result.Thread = thread
