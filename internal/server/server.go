@@ -30,6 +30,8 @@ type Server struct {
 	readMessageHandler *tools.ReadMessageHandler
 	// listChannelMessagesHandler handles the list_channel_messages tool.
 	listChannelMessagesHandler *tools.ListChannelMessagesHandler
+	// searchMessagesHandler handles the search_messages tool.
+	searchMessagesHandler *tools.SearchMessagesHandler
 }
 
 // Config holds the configuration for creating a new Server.
@@ -37,6 +39,10 @@ type Config struct {
 	// SlackToken is the Slack bot token for API authentication.
 	// Required for creating the Slack client.
 	SlackToken string
+	// SlackUserToken is the Slack user token for user-level API operations.
+	// Optional. Required for the search_messages tool (uses search:read scope).
+	// If not provided, search_messages will return an error when called.
+	SlackUserToken string
 }
 
 // New creates a new Slack MCP server with the provided configuration.
@@ -52,8 +58,8 @@ func New(cfg Config) (*Server, error) {
 		return nil, fmt.Errorf("SLACK_BOT_TOKEN is required")
 	}
 
-	// Create the Slack client
-	slackClient := slackclient.NewClient(cfg.SlackToken)
+	// Create the Slack client with both bot token and optional user token
+	slackClient := slackclient.NewClient(cfg.SlackToken, cfg.SlackUserToken)
 
 	// Create the MCP server with tool capabilities enabled
 	mcpServer := server.NewMCPServer(
@@ -68,11 +74,15 @@ func New(cfg Config) (*Server, error) {
 	// Create the list_channel_messages handler
 	listChannelMessagesHandler := tools.NewListChannelMessagesHandler(slackClient)
 
+	// Create the search_messages handler
+	searchMessagesHandler := tools.NewSearchMessagesHandler(slackClient)
+
 	s := &Server{
 		mcpServer:                  mcpServer,
 		slackClient:                slackClient,
 		readMessageHandler:         readMessageHandler,
 		listChannelMessagesHandler: listChannelMessagesHandler,
+		searchMessagesHandler:      searchMessagesHandler,
 	}
 
 	// Register tools
@@ -102,11 +112,15 @@ func NewWithClient(client slackclient.ClientInterface) *Server {
 	// Create the list_channel_messages handler
 	listChannelMessagesHandler := tools.NewListChannelMessagesHandler(client)
 
+	// Create the search_messages handler
+	searchMessagesHandler := tools.NewSearchMessagesHandler(client)
+
 	s := &Server{
 		mcpServer:                  mcpServer,
 		slackClient:                client,
 		readMessageHandler:         readMessageHandler,
 		listChannelMessagesHandler: listChannelMessagesHandler,
+		searchMessagesHandler:      searchMessagesHandler,
 	}
 
 	// Register tools
