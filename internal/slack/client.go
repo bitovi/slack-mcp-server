@@ -5,6 +5,7 @@ package slack
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/slack-go/slack"
@@ -109,6 +110,78 @@ func (c *Client) GetThread(ctx context.Context, channelID, threadTS string) ([]t
 // This is determined by checking the ReplyCount field of the message.
 func (c *Client) HasThread(message *types.Message) bool {
 	return message != nil && message.ReplyCount > 0
+}
+
+// GetUserInfo retrieves user information from Slack, using a cache to minimize API calls.
+//
+// Parameters:
+//   - ctx: Context for cancellation and timeouts
+//   - userID: The Slack user ID (e.g., "U06025G6B28")
+//
+// Returns the user info if found, or a placeholder for deleted users.
+// Returns an error only for non-recoverable failures (e.g., invalid token).
+func (c *Client) GetUserInfo(ctx context.Context, userID string) (*types.UserInfo, error) {
+	// Check if user ID is empty
+	if userID == "" {
+		return nil, nil
+	}
+
+	// Check cache first
+	if cached, ok := c.userCache.Load(userID); ok {
+		return cached.(*types.UserInfo), nil
+	}
+
+	// Fetch from Slack API
+	user, err := c.api.GetUserInfoContext(ctx, userID)
+	if err != nil {
+		// Check if user was not found (deleted user)
+		errStr := err.Error()
+		if strings.Contains(errStr, "user_not_found") || strings.Contains(errStr, "users_not_found") {
+			// Return placeholder for deleted user
+			deletedUser := &types.UserInfo{
+				ID:          userID,
+				Name:        "deleted_user",
+				DisplayName: "Deleted User",
+				RealName:    "Deleted User",
+				IsBot:       false,
+				IsDeleted:   true,
+			}
+			// Cache the placeholder to avoid repeated lookups
+			c.userCache.Store(userID, deletedUser)
+			return deletedUser, nil
+		}
+		return nil, wrapSlackError(err)
+	}
+
+	// Convert to our UserInfo type
+	userInfo := convertUser(user)
+
+	// Cache the result
+	c.userCache.Store(userID, userInfo)
+
+	return userInfo, nil
+}
+
+// convertUser converts a Slack API user to our UserInfo type.
+func convertUser(user *slack.User) *types.UserInfo {
+	displayName := user.Profile.DisplayName
+	// Fall back to real name if display name is empty
+	if displayName == "" {
+		displayName = user.Profile.RealName
+	}
+	// Fall back to username if both are empty
+	if displayName == "" {
+		displayName = user.Name
+	}
+
+	return &types.UserInfo{
+		ID:          user.ID,
+		Name:        user.Name,
+		DisplayName: displayName,
+		RealName:    user.Profile.RealName,
+		IsBot:       user.IsBot,
+		IsDeleted:   user.Deleted,
+	}
 }
 
 // convertMessage converts a Slack API message to our Message type.
