@@ -258,6 +258,9 @@ type ClientInterface interface {
 	GetMessage(ctx context.Context, channelID, timestamp string) (*types.Message, error)
 	GetThread(ctx context.Context, channelID, threadTS string) ([]types.Message, error)
 	HasThread(message *types.Message) bool
+	GetUserInfo(ctx context.Context, userID string) (*types.UserInfo, error)
+	GetCurrentUser(ctx context.Context) (*types.UserInfo, error)
+	ExtractMentions(text string) []string
 }
 
 // Ensure Client implements ClientInterface.
