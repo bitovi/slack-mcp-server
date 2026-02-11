@@ -4,7 +4,7 @@ package urlparser
 import (
 	"testing"
 
-	"github.com/slack-mcp-server/slack-mcp-server/pkg/types"
+	"github.com/Bitovi/slack-mcp-server/pkg/types"
 )
 
 func TestParse_ValidMessageURL(t *testing.T) {

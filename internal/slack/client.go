@@ -8,7 +8,7 @@ import (
 
 	"github.com/slack-go/slack"
 
-	"github.com/slack-mcp-server/slack-mcp-server/pkg/types"
+	"github.com/Bitovi/slack-mcp-server/pkg/types"
 )
 
 // Client wraps the Slack API client to provide message and thread retrieval.

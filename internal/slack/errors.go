@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/slack-mcp-server/slack-mcp-server/pkg/types"
+	"github.com/Bitovi/slack-mcp-server/pkg/types"
 )
 
 // Error sentinel values for common Slack API errors.
