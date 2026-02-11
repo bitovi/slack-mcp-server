@@ -9,8 +9,10 @@ This Go-based MCP server integrates with the Slack API to fetch message content.
 ### Features
 
 - **Read Slack Messages**: Fetch any message from public or private channels, DMs, and group DMs
+- **List Channel Messages**: Retrieve recent messages from any channel with pagination support
 - **Thread Support**: Automatically retrieves entire threads when the message has replies
 - **URL-Based Retrieval**: Simply provide a Slack message URL to fetch its content
+- **User Resolution**: Automatically resolves user IDs to names and builds user mappings for mentions
 - **MCP Protocol**: Standard MCP protocol support for seamless AI agent integration
 
 ## Prerequisites
@@ -160,6 +162,90 @@ Reads a Slack message and its thread by URL.
 }
 ```
 
+#### `list_channel_messages`
+
+Lists recent messages from a Slack channel by channel ID.
+
+**Input Schema:**
+```json
+{
+  "type": "object",
+  "properties": {
+    "channel_id": {
+      "type": "string",
+      "description": "Slack channel ID (e.g., C01234567)"
+    },
+    "limit": {
+      "type": "number",
+      "description": "Number of messages to retrieve (default: 100, max: 200)"
+    },
+    "oldest": {
+      "type": "string",
+      "description": "Only return messages after this Unix timestamp"
+    },
+    "latest": {
+      "type": "string",
+      "description": "Only return messages before this Unix timestamp"
+    }
+  },
+  "required": ["channel_id"]
+}
+```
+
+**Example Request:**
+```json
+{
+  "name": "list_channel_messages",
+  "arguments": {
+    "channel_id": "C01234567",
+    "limit": 50
+  }
+}
+```
+
+**Example Response:**
+```json
+{
+  "messages": [
+    {
+      "user": "U01234567",
+      "user_name": "jsmith",
+      "display_name": "John Smith",
+      "real_name": "John Smith",
+      "text": "Here's the latest update on the project",
+      "timestamp": "1234567892.123456",
+      "reply_count": 3
+    },
+    {
+      "user": "U09876543",
+      "user_name": "mjones",
+      "display_name": "Mary Jones",
+      "real_name": "Mary Jones",
+      "text": "Thanks for the update! <@U01234567>",
+      "timestamp": "1234567891.123456"
+    }
+  ],
+  "channel_id": "C01234567",
+  "has_more": true,
+  "current_user": {
+    "id": "U11111111",
+    "name": "mybot",
+    "display_name": "My Bot",
+    "real_name": "My Bot",
+    "is_bot": true
+  },
+  "user_mapping": {
+    "U01234567": {
+      "id": "U01234567",
+      "name": "jsmith",
+      "display_name": "John Smith",
+      "real_name": "John Smith",
+      "is_bot": false
+    }
+  }
+}
+```
+
 ### Slack URL Formats
 
 The server supports these Slack URL formats:
@@ -211,7 +297,9 @@ slack-mcp-server/
 │   │   └── parser_test.go    # URL parser tests
 │   └── tools/
 │       ├── read_message.go   # read_message tool implementation
-│       └── read_message_test.go
+│       ├── read_message_test.go
+│       ├── list_channel_messages.go      # list_channel_messages tool implementation
+│       └── list_channel_messages_test.go
 ├── pkg/
 │   └── types/
 │       └── types.go          # Shared type definitions
