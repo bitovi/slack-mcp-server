@@ -116,6 +116,58 @@ func (c *Client) HasThread(message *types.Message) bool {
 	return message != nil && message.ReplyCount > 0
 }
 
+// GetChannelHistory retrieves messages from a Slack channel.
+//
+// Parameters:
+//   - ctx: Context for cancellation and timeouts
+//   - channelID: The Slack channel ID (e.g., "C01234567")
+//   - limit: Maximum number of messages to retrieve (capped at internal maximum)
+//   - oldest: Only messages after this Unix timestamp (inclusive), empty for no filter
+//   - latest: Only messages before this Unix timestamp (inclusive), empty for no filter
+//
+// Returns messages in reverse chronological order (newest first), a boolean indicating
+// if more messages are available, or an error if the channel cannot be accessed.
+func (c *Client) GetChannelHistory(ctx context.Context, channelID string, limit int, oldest, latest string) ([]types.Message, bool, error) {
+	params := &slack.GetConversationHistoryParameters{
+		ChannelID: channelID,
+		Oldest:    oldest,
+		Latest:    latest,
+	}
+
+	var allMessages []types.Message
+	cursor := ""
+	remaining := limit
+
+	for remaining > 0 {
+		params.Cursor = cursor
+		// Slack API limit is 100 per request
+		if remaining > 100 {
+			params.Limit = 100
+		} else {
+			params.Limit = remaining
+		}
+
+		history, err := c.api.GetConversationHistoryContext(ctx, params)
+		if err != nil {
+			return nil, false, wrapSlackError(err)
+		}
+
+		// Convert and append messages
+		for i := range history.Messages {
+			allMessages = append(allMessages, *convertMessage(&history.Messages[i]))
+		}
+
+		remaining -= len(history.Messages)
+
+		if !history.HasMore {
+			return allMessages, false, nil
+		}
+		cursor = history.ResponseMetaData.NextCursor
+	}
+
+	return allMessages, true, nil // hasMore indicates more messages exist
+}
+
 // GetCurrentUser retrieves information about the currently authenticated bot user.
 //
 // Parameters:
