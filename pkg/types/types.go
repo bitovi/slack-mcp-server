@@ -22,6 +22,15 @@ type UserInfo struct {
 type Message struct {
 	// User is the Slack user ID of the message author.
 	User string `json:"user"`
+	// UserName is the username (handle) of the message author, resolved from the user ID.
+	// Empty if user resolution was not performed or failed.
+	UserName string `json:"user_name,omitempty"`
+	// DisplayName is the display name of the message author.
+	// Empty if user resolution was not performed or failed.
+	DisplayName string `json:"display_name,omitempty"`
+	// RealName is the full name of the message author.
+	// Empty if user resolution was not performed or failed.
+	RealName string `json:"real_name,omitempty"`
 	// Text is the message content.
 	Text string `json:"text"`
 	// Timestamp is the message timestamp in Slack API format (e.g., "1234567890.123456").
