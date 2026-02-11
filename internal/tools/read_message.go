@@ -43,7 +43,7 @@ func (h *ReadMessageHandler) Handle(ctx context.Context, request mcp.CallToolReq
 	if !ok {
 		return mcp.NewToolResultError("missing required argument 'url'"), nil
 	}
-	
+
 	url, ok := urlArg.(string)
 	if !ok {
 		return mcp.NewToolResultError("argument 'url' must be a string"), nil
