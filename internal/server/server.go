@@ -168,6 +168,25 @@ func (s *Server) registerTools() {
 
 	// Register the tool with the ListChannelMessagesHandler
 	s.mcpServer.AddTool(listChannelMessagesTool, s.listChannelMessagesHandler.HandleFunc())
+
+	// Create the search_messages tool
+	searchMessagesTool := mcp.NewTool("search_messages",
+		mcp.WithDescription("Search for messages across the Slack workspace. "+
+			"Supports Slack search modifiers like in:#channel and from:@user."),
+		mcp.WithString("query",
+			mcp.Required(),
+			mcp.Description("Search query string. Supports Slack modifiers (in:#channel, from:@user)"),
+		),
+		mcp.WithNumber("count",
+			mcp.Description("Number of results to return (default: 20, max: 100)"),
+		),
+		mcp.WithString("sort",
+			mcp.Description("Sort order: 'score' (relevance) or 'timestamp' (default: score)"),
+		),
+	)
+
+	// Register the tool with the SearchMessagesHandler
+	s.mcpServer.AddTool(searchMessagesTool, s.searchMessagesHandler.HandleFunc())
 }
 
 // Run starts the MCP server using Stdio transport.
