@@ -29,6 +29,10 @@ var (
 
 	// ErrPermissionDenied indicates the bot lacks required permissions.
 	ErrPermissionDenied = types.NewSlackError(types.ErrCodePermissionDenied, "permission denied")
+
+	// ErrUserTokenNotConfigured indicates the SLACK_USER_TOKEN is not set.
+	ErrUserTokenNotConfigured = types.NewSlackError(types.ErrCodeUserTokenNotConfigured,
+		"SLACK_USER_TOKEN not configured. Search requires a user token (xoxp-) with search:read scope.")
 )
 
 // IsRateLimited checks if the error is a rate limiting error.
@@ -59,6 +63,11 @@ func IsMessageNotFound(err error) bool {
 // IsPermissionDenied checks if the error is a permission denied error.
 func IsPermissionDenied(err error) bool {
 	return isSlackErrorCode(err, types.ErrCodePermissionDenied)
+}
+
+// IsUserTokenNotConfigured checks if the error is a user token not configured error.
+func IsUserTokenNotConfigured(err error) bool {
+	return isSlackErrorCode(err, types.ErrCodeUserTokenNotConfigured)
 }
 
 // isSlackErrorCode checks if the error is a SlackError with the given code.

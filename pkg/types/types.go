@@ -161,6 +161,8 @@ const (
 	ErrCodeInvalidToken = "invalid_token"
 	// ErrCodePermissionDenied indicates the bot lacks required permissions.
 	ErrCodePermissionDenied = "permission_denied"
+	// ErrCodeUserTokenNotConfigured indicates the SLACK_USER_TOKEN is not set.
+	ErrCodeUserTokenNotConfigured = "user_token_not_configured"
 )
 
 // NewSlackError creates a new SlackError with the given code and message.
