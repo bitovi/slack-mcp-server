@@ -40,6 +40,7 @@ func TestListChannelMessagesHandler_Handle_Success(t *testing.T) {
 		userInfoMap      map[string]*types.UserInfo
 		wantMessageCount int
 		wantHasMore      bool
+		wantUserNames    []string // Expected user_name for each message
 	}{
 		{
 			name:      "basic message retrieval",
@@ -78,9 +79,10 @@ func TestListChannelMessagesHandler_Handle_Success(t *testing.T) {
 			},
 			wantMessageCount: 2,
 			wantHasMore:      false,
+			wantUserNames:    []string{"alice", "bob"},
 		},
 		{
-			name:             "empty channel",
+			name:             "empty channel returns empty array",
 			channelID:        "C01234567",
 			limit:            100,
 			mockMessages:     []types.Message{},
@@ -88,6 +90,52 @@ func TestListChannelMessagesHandler_Handle_Success(t *testing.T) {
 			userInfoMap:      map[string]*types.UserInfo{},
 			wantMessageCount: 0,
 			wantHasMore:      false,
+			wantUserNames:    nil,
+		},
+		{
+			name:      "messages with user resolution",
+			channelID: "C01234567",
+			limit:     100,
+			mockMessages: []types.Message{
+				{
+					User:       "U11111111",
+					Text:       "First message from user 1",
+					Timestamp:  "1355517523.000001",
+					ReplyCount: 0,
+				},
+				{
+					User:       "U22222222",
+					Text:       "Second message from user 2",
+					Timestamp:  "1355517523.000002",
+					ReplyCount: 0,
+				},
+				{
+					User:       "U11111111",
+					Text:       "Third message from user 1 again",
+					Timestamp:  "1355517523.000003",
+					ReplyCount: 0,
+				},
+			},
+			mockHasMore: false,
+			userInfoMap: map[string]*types.UserInfo{
+				"U11111111": {
+					ID:          "U11111111",
+					Name:        "johndoe",
+					DisplayName: "John Doe",
+					RealName:    "John D. Doe",
+					IsBot:       false,
+				},
+				"U22222222": {
+					ID:          "U22222222",
+					Name:        "janedoe",
+					DisplayName: "Jane Doe",
+					RealName:    "Jane D. Doe",
+					IsBot:       false,
+				},
+			},
+			wantMessageCount: 3,
+			wantHasMore:      false,
+			wantUserNames:    []string{"johndoe", "janedoe", "johndoe"},
 		},
 		{
 			name:      "with has_more flag",
@@ -106,6 +154,7 @@ func TestListChannelMessagesHandler_Handle_Success(t *testing.T) {
 			},
 			wantMessageCount: 1,
 			wantHasMore:      true,
+			wantUserNames:    []string{"alice"},
 		},
 		{
 			name:      "with oldest and latest filters",
@@ -123,6 +172,51 @@ func TestListChannelMessagesHandler_Handle_Success(t *testing.T) {
 			userInfoMap:      map[string]*types.UserInfo{},
 			wantMessageCount: 1,
 			wantHasMore:      false,
+			wantUserNames:    []string{""},
+		},
+		{
+			name:      "user resolution graceful failure",
+			channelID: "C01234567",
+			limit:     100,
+			mockMessages: []types.Message{
+				{
+					User:       "UUNKNOWN1",
+					Text:       "Message from unknown user",
+					Timestamp:  "1355517523.000008",
+					ReplyCount: 0,
+				},
+			},
+			mockHasMore:      false,
+			userInfoMap:      map[string]*types.UserInfo{}, // No user info available
+			wantMessageCount: 1,
+			wantHasMore:      false,
+			wantUserNames:    []string{""}, // Should be empty, not fail
+		},
+		{
+			name:      "bot user resolution",
+			channelID: "C01234567",
+			limit:     100,
+			mockMessages: []types.Message{
+				{
+					User:       "UBOTUSER1",
+					Text:       "Bot message",
+					Timestamp:  "1355517523.000008",
+					ReplyCount: 0,
+				},
+			},
+			mockHasMore: false,
+			userInfoMap: map[string]*types.UserInfo{
+				"UBOTUSER1": {
+					ID:          "UBOTUSER1",
+					Name:        "mybot",
+					DisplayName: "My Bot",
+					RealName:    "My Bot App",
+					IsBot:       true,
+				},
+			},
+			wantMessageCount: 1,
+			wantHasMore:      false,
+			wantUserNames:    []string{"mybot"},
 		},
 	}
 
@@ -198,6 +292,30 @@ func TestListChannelMessagesHandler_Handle_Success(t *testing.T) {
 
 			if listResult.HasMore != tt.wantHasMore {
 				t.Errorf("result HasMore = %v, want %v", listResult.HasMore, tt.wantHasMore)
+			}
+
+			// Verify user resolution populated name fields on messages
+			if tt.wantUserNames != nil {
+				if len(listResult.Messages) != len(tt.wantUserNames) {
+					t.Fatalf("Messages length = %d, want %d for user name verification", len(listResult.Messages), len(tt.wantUserNames))
+				}
+				for i, wantName := range tt.wantUserNames {
+					if listResult.Messages[i].UserName != wantName {
+						t.Errorf("Messages[%d].UserName = %q, want %q", i, listResult.Messages[i].UserName, wantName)
+					}
+				}
+			}
+
+			// Verify display and real names for messages with user resolution
+			for i, msg := range listResult.Messages {
+				if userInfo, ok := tt.userInfoMap[msg.User]; ok {
+					if msg.DisplayName != userInfo.DisplayName {
+						t.Errorf("Messages[%d].DisplayName = %q, want %q", i, msg.DisplayName, userInfo.DisplayName)
+					}
+					if msg.RealName != userInfo.RealName {
+						t.Errorf("Messages[%d].RealName = %q, want %q", i, msg.RealName, userInfo.RealName)
+					}
+				}
 			}
 		})
 	}
