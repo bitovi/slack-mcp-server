@@ -655,13 +655,13 @@ func TestListChannelMessagesHandler_Handle_SlackErrors(t *testing.T) {
 // TestListChannelMessagesHandler_Handle_Pagination tests pagination behavior including has_more flag and limit capping.
 func TestListChannelMessagesHandler_Handle_Pagination(t *testing.T) {
 	tests := []struct {
-		name           string
-		channelID      string
-		requestLimit   float64
-		mockHasMore    bool
-		mockMessages   []types.Message
-		wantLimit      int  // Expected limit passed to GetChannelHistory
-		wantHasMore    bool // Expected has_more in result
+		name         string
+		channelID    string
+		requestLimit float64
+		mockHasMore  bool
+		mockMessages []types.Message
+		wantLimit    int  // Expected limit passed to GetChannelHistory
+		wantHasMore  bool // Expected has_more in result
 	}{
 		{
 			name:         "has_more true when more messages available",
@@ -901,7 +901,7 @@ func TestListChannelMessagesHandler_Handle_UserMapping(t *testing.T) {
 				},
 			},
 			extractedIDs: map[string][]string{
-				"Hey <@U87654321>, check this out":       {"U87654321"},
+				"Hey <@U87654321>, check this out":      {"U87654321"},
 				"Thanks <@UAAAAAAAA>, I'll take a look": {"UAAAAAAAA"},
 			},
 			userInfoMap: map[string]*types.UserInfo{

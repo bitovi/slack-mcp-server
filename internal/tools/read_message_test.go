@@ -22,6 +22,7 @@ type mockSlackClient struct {
 	getUserInfo       func(ctx context.Context, userID string) (*types.UserInfo, error)
 	getCurrentUser    func(ctx context.Context) (*types.UserInfo, error)
 	extractMentions   func(text string) []string
+	searchMessages    func(ctx context.Context, query string, count int, sort string) ([]types.SearchMatch, int, error)
 }
 
 // GetMessage implements slackclient.ClientInterface.
@@ -90,6 +91,15 @@ func (m *mockSlackClient) ExtractMentions(text string) []string {
 	return []string{}
 }
 
+// SearchMessages implements slackclient.ClientInterface.
+func (m *mockSlackClient) SearchMessages(ctx context.Context, query string, count int, sort string) ([]types.SearchMatch, int, error) {
+	if m.searchMessages != nil {
+		return m.searchMessages(ctx, query, count, sort)
+	}
+	// Default: return empty results
+	return []types.SearchMatch{}, 0, nil
+}
+
 // Ensure mockSlackClient implements the interface.
 var _ slackclient.ClientInterface = (*mockSlackClient)(nil)
 
@@ -111,14 +121,14 @@ func createToolRequest(args map[string]interface{}) mcp.CallToolRequest {
 
 func TestReadMessageHandler_Handle_Success(t *testing.T) {
 	tests := []struct {
-		name           string
-		url            string
-		mockMessage    *types.Message
-		mockThread     []types.Message
-		hasThread      bool
-		wantChannelID  string
-		wantTimestamp  string
-		wantThreadLen  int
+		name          string
+		url           string
+		mockMessage   *types.Message
+		mockThread    []types.Message
+		hasThread     bool
+		wantChannelID string
+		wantTimestamp string
+		wantThreadLen int
 	}{
 		{
 			name: "simple message without thread",
@@ -1070,7 +1080,7 @@ func TestReadMessage_MentionMapping(t *testing.T) {
 			},
 			hasThread: true,
 			extractedIDs: map[string][]string{
-				"Thread parent":                           {},
+				"Thread parent":                        {},
 				"Hey <@UAAAAAAAA>, what do you think?": {"UAAAAAAAA"},
 			},
 			userInfoMap: map[string]*types.UserInfo{

@@ -14,8 +14,12 @@ import (
 const (
 	// envSlackBotToken is the environment variable name for the Slack bot token.
 	envSlackBotToken = "SLACK_BOT_TOKEN"
-	// tokenPrefix is the expected prefix for Slack bot tokens.
-	tokenPrefix = "xoxb-"
+	// envSlackUserToken is the environment variable name for the Slack user token.
+	envSlackUserToken = "SLACK_USER_TOKEN"
+	// botTokenPrefix is the expected prefix for Slack bot tokens.
+	botTokenPrefix = "xoxb-"
+	// userTokenPrefix is the expected prefix for Slack user tokens.
+	userTokenPrefix = "xoxp-"
 )
 
 // Version information (set during build with ldflags if needed)
@@ -60,14 +64,15 @@ func run(args []string) error {
 	}
 
 	// Validate configuration
-	token, err := validateConfig()
+	config, err := validateConfig()
 	if err != nil {
 		return err
 	}
 
 	// Create server configuration
 	cfg := server.Config{
-		SlackToken: token,
+		SlackToken:     config.botToken,
+		SlackUserToken: config.userToken,
 	}
 
 	// Create the MCP server
@@ -109,14 +114,20 @@ func parseFlags(args []string) (*flags, error) {
 	return f, nil
 }
 
-// validateConfig validates the server configuration from environment variables.
-// Returns the Slack bot token if valid, or an error with helpful guidance.
-func validateConfig() (string, error) {
-	token := os.Getenv(envSlackBotToken)
+// configResult holds the validated configuration values.
+type configResult struct {
+	botToken  string
+	userToken string
+}
 
-	// Check if token is provided
-	if token == "" {
-		return "", fmt.Errorf(
+// validateConfig validates the server configuration from environment variables.
+// Returns the validated config if valid, or an error with helpful guidance.
+func validateConfig() (*configResult, error) {
+	botToken := os.Getenv(envSlackBotToken)
+
+	// Check if bot token is provided
+	if botToken == "" {
+		return nil, fmt.Errorf(
 			"%s environment variable is required\n\n"+
 				"To obtain a Slack bot token:\n"+
 				"1. Go to https://api.slack.com/apps and create a new app\n"+
@@ -131,31 +142,65 @@ func validateConfig() (string, error) {
 			envSlackBotToken, envSlackBotToken)
 	}
 
-	// Validate token format
-	if !strings.HasPrefix(token, tokenPrefix) {
-		return "", fmt.Errorf(
+	// Validate bot token format
+	if !strings.HasPrefix(botToken, botTokenPrefix) {
+		return nil, fmt.Errorf(
 			"invalid %s: token must start with '%s'\n\n"+
 				"The token you provided does not appear to be a valid Slack bot token.\n"+
 				"Bot tokens always start with '%s'.\n\n"+
 				"Common token prefixes:\n"+
 				"  - xoxb-  : Bot tokens (required for this server)\n"+
-				"  - xoxp-  : User tokens (not supported)\n"+
+				"  - xoxp-  : User tokens (optional, for search_messages)\n"+
 				"  - xoxa-  : App-level tokens (not supported)\n\n"+
 				"Please use the Bot User OAuth Token from your Slack app settings.",
-			envSlackBotToken, tokenPrefix, tokenPrefix)
+			envSlackBotToken, botTokenPrefix, botTokenPrefix)
 	}
 
-	// Validate token length (basic sanity check)
+	// Validate bot token length (basic sanity check)
 	// Slack tokens are typically at least 50 characters
-	if len(token) < 50 {
-		return "", fmt.Errorf(
+	if len(botToken) < 50 {
+		return nil, fmt.Errorf(
 			"invalid %s: token appears too short\n\n"+
 				"Slack bot tokens are typically at least 50 characters long.\n"+
 				"Please verify you copied the complete token from your Slack app settings.",
 			envSlackBotToken)
 	}
 
-	return token, nil
+	result := &configResult{
+		botToken: botToken,
+	}
+
+	// Load optional user token
+	userToken := os.Getenv(envSlackUserToken)
+	if userToken != "" {
+		// Validate user token format
+		if !strings.HasPrefix(userToken, userTokenPrefix) {
+			return nil, fmt.Errorf(
+				"invalid %s: token must start with '%s'\n\n"+
+					"The token you provided does not appear to be a valid Slack user token.\n"+
+					"User tokens always start with '%s'.\n\n"+
+					"To obtain a user token:\n"+
+					"1. Go to https://api.slack.com/apps and select your app\n"+
+					"2. Under 'OAuth & Permissions', add the 'search:read' scope\n"+
+					"3. Install or reinstall the app to your workspace\n"+
+					"4. Copy the 'User OAuth Token' (starts with xoxp-)\n"+
+					"5. Export it: export %s=xoxp-your-token-here",
+				envSlackUserToken, userTokenPrefix, userTokenPrefix, envSlackUserToken)
+		}
+
+		// Validate user token length (basic sanity check)
+		if len(userToken) < 50 {
+			return nil, fmt.Errorf(
+				"invalid %s: token appears too short\n\n"+
+					"Slack user tokens are typically at least 50 characters long.\n"+
+					"Please verify you copied the complete token from your Slack app settings.",
+				envSlackUserToken)
+		}
+
+		result.userToken = userToken
+	}
+
+	return result, nil
 }
 
 // printVersion prints version information to stdout.
@@ -180,6 +225,10 @@ OPTIONS:
 ENVIRONMENT VARIABLES:
     SLACK_BOT_TOKEN    Required. The Slack bot token for API authentication.
                        Must start with 'xoxb-'.
+
+    SLACK_USER_TOKEN   Optional. The Slack user token for search functionality.
+                       Must start with 'xoxp-'. Required for search_messages tool.
+                       Requires 'search:read' scope.
 
 REQUIRED SLACK SCOPES:
     The Slack bot must have the following OAuth scopes:

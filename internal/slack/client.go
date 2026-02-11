@@ -19,15 +19,23 @@ var mentionPattern = regexp.MustCompile(`<@(U[A-Z0-9]+)>`)
 
 // Client wraps the Slack API client to provide message and thread retrieval.
 type Client struct {
-	api       *slack.Client
-	userCache sync.Map // Maps user ID (string) to user display name (string)
+	api          *slack.Client
+	userTokenAPI *slack.Client // User token API client for operations requiring user token (e.g., search)
+	userCache    sync.Map      // Maps user ID (string) to user display name (string)
 }
 
-// NewClient creates a new Slack client with the provided bot token.
-func NewClient(token string) *Client {
-	return &Client{
-		api: slack.New(token),
+// NewClient creates a new Slack client with the provided tokens.
+// The botToken is required for bot-level API operations (messages, channels).
+// The userToken is optional and used for user-level API operations (search).
+// If userToken is empty, search operations will return an error when called.
+func NewClient(botToken, userToken string) *Client {
+	client := &Client{
+		api: slack.New(botToken),
 	}
+	if userToken != "" {
+		client.userTokenAPI = slack.New(userToken)
+	}
+	return client
 }
 
 // GetMessage retrieves a single message from a Slack channel by its timestamp.
@@ -271,6 +279,65 @@ func convertMessage(msg *slack.Message) *types.Message {
 	}
 }
 
+// SearchMessages searches for messages across the Slack workspace.
+//
+// Parameters:
+//   - ctx: Context for cancellation and timeouts
+//   - query: Search query string (supports Slack search modifiers like in:#channel, from:@user)
+//   - count: Maximum number of results to return (capped at 100)
+//   - sort: Sort order - "score" (relevance) or "timestamp" (chronological)
+//
+// Returns matching messages and the total count, or an error if the search cannot be performed.
+// This method requires a user token (SLACK_USER_TOKEN) to be configured.
+func (c *Client) SearchMessages(ctx context.Context, query string, count int, sort string) ([]types.SearchMatch, int, error) {
+	// Check if user token API is configured
+	if c.userTokenAPI == nil {
+		return nil, 0, ErrUserTokenNotConfigured
+	}
+
+	// Cap count at 100 (Slack API maximum)
+	if count > 100 {
+		count = 100
+	}
+	if count <= 0 {
+		count = 20 // default
+	}
+
+	// Validate and default sort
+	sortDir := "desc"
+	if sort != "score" && sort != "timestamp" {
+		sort = "score" // default to relevance
+	}
+
+	params := slack.SearchParameters{
+		Sort:          sort,
+		SortDirection: sortDir,
+		Count:         count,
+	}
+
+	// Use the user token API for search
+	results, err := c.userTokenAPI.SearchMessagesContext(ctx, query, params)
+	if err != nil {
+		return nil, 0, wrapSlackError(err)
+	}
+
+	// Convert search matches to our type
+	matches := make([]types.SearchMatch, 0, len(results.Matches))
+	for _, match := range results.Matches {
+		matches = append(matches, types.SearchMatch{
+			ChannelID:   match.Channel.ID,
+			ChannelName: match.Channel.Name,
+			User:        match.User,
+			UserName:    match.Username,
+			Text:        match.Text,
+			Timestamp:   match.Timestamp,
+			Permalink:   match.Permalink,
+		})
+	}
+
+	return matches, results.Total, nil
+}
+
 // ExtractMentions extracts unique user IDs from Slack mentions in the given text.
 //
 // Slack mentions follow the format <@UXXXXXXXX> where U followed by alphanumeric
@@ -314,6 +381,7 @@ type ClientInterface interface {
 	GetUserInfo(ctx context.Context, userID string) (*types.UserInfo, error)
 	GetCurrentUser(ctx context.Context) (*types.UserInfo, error)
 	ExtractMentions(text string) []string
+	SearchMessages(ctx context.Context, query string, count int, sort string) ([]types.SearchMatch, int, error)
 }
 
 // Ensure Client implements ClientInterface.

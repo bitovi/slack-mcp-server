@@ -94,6 +94,44 @@ type ListChannelMessagesResult struct {
 	UserMapping map[string]UserInfo `json:"user_mapping,omitempty"`
 }
 
+// SearchMessagesResult is the output schema for the search_messages MCP tool.
+type SearchMessagesResult struct {
+	// Query is the search query that was executed.
+	Query string `json:"query"`
+	// Total is the total number of matching messages found.
+	Total int `json:"total"`
+	// Matches contains the matching messages.
+	Matches []SearchMatch `json:"matches"`
+	// CurrentUser contains the authenticated user's information.
+	// Nil if user lookup was not performed or failed.
+	CurrentUser *UserInfo `json:"current_user,omitempty"`
+}
+
+// SearchMatch represents a single message match from search results.
+type SearchMatch struct {
+	// ChannelID is the ID of the channel where the message was posted.
+	ChannelID string `json:"channel_id"`
+	// ChannelName is the name of the channel (without # prefix).
+	ChannelName string `json:"channel_name"`
+	// User is the Slack user ID of the message author.
+	User string `json:"user"`
+	// UserName is the username of the message author.
+	// Empty if user resolution was not performed or failed.
+	UserName string `json:"user_name,omitempty"`
+	// DisplayName is the display name of the message author.
+	// Empty if user resolution was not performed or failed.
+	DisplayName string `json:"display_name,omitempty"`
+	// RealName is the full name of the message author.
+	// Empty if user resolution was not performed or failed.
+	RealName string `json:"real_name,omitempty"`
+	// Text is the message content.
+	Text string `json:"text"`
+	// Timestamp is the message timestamp in Slack API format.
+	Timestamp string `json:"timestamp"`
+	// Permalink is the direct URL to the message.
+	Permalink string `json:"permalink"`
+}
+
 // SlackError represents an error from the Slack API or URL parsing.
 type SlackError struct {
 	// Code is a machine-readable error code.
@@ -123,6 +161,8 @@ const (
 	ErrCodeInvalidToken = "invalid_token"
 	// ErrCodePermissionDenied indicates the bot lacks required permissions.
 	ErrCodePermissionDenied = "permission_denied"
+	// ErrCodeUserTokenNotConfigured indicates the SLACK_USER_TOKEN is not set.
+	ErrCodeUserTokenNotConfigured = "user_token_not_configured"
 )
 
 // NewSlackError creates a new SlackError with the given code and message.
