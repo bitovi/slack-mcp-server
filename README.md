@@ -16,6 +16,56 @@ This Go-based MCP server integrates with the Slack API to fetch message content.
 - **User Resolution**: Automatically resolves user IDs to names and builds user mappings for mentions
 - **MCP Protocol**: Standard MCP protocol support for seamless AI agent integration
 
+## Quick Start
+
+Get started with the Slack MCP server in minutes using Docker:
+
+**1. Get your Slack tokens** (see [Configuration](#configuration) for detailed setup)
+   - Create a Slack App at [api.slack.com/apps](https://api.slack.com/apps)
+   - Add bot token scopes: `channels:history`, `groups:history`, `im:history`, `mpim:history`
+   - Install the app and copy your Bot Token (`xoxb-...`)
+   - Optionally add user token scope `search:read` for search functionality
+
+**2. Pull the Docker image**
+   ```bash
+   docker pull bitovi/slack-mcp-server:latest
+   ```
+
+**3. Add to your MCP client configuration** (e.g., Claude Desktop)
+   
+   Edit your MCP settings file:
+   - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+   - **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+   
+   Add this configuration:
+   ```json
+   {
+     "mcpServers": {
+       "slack": {
+         "command": "docker",
+         "args": [
+           "run",
+           "-i",
+           "--rm",
+           "-e",
+           "SLACK_BOT_TOKEN",
+           "-e",
+           "SLACK_USER_TOKEN",
+           "bitovi/slack-mcp-server:latest"
+         ],
+         "env": {
+           "SLACK_BOT_TOKEN": "xoxb-your-bot-token-here",
+           "SLACK_USER_TOKEN": "xoxp-your-user-token-here"
+         }
+       }
+     }
+   }
+   ```
+
+**4. Restart your MCP client** and start using the Slack tools!
+
+> **Note**: `SLACK_USER_TOKEN` is optional and only needed for the `search_messages` tool.
+
 ## Prerequisites
 
 - **Go 1.21+**: Required for building the server
@@ -23,6 +73,23 @@ This Go-based MCP server integrates with the Slack API to fetch message content.
 - **Slack Bot Token**: A bot token with appropriate permissions (see setup below)
 
 ## Installation
+
+### Using Docker (Recommended)
+
+**Pull from Docker Hub:**
+```bash
+docker pull bitovi/slack-mcp-server:latest
+```
+
+**Or build locally:**
+```bash
+# Clone the repository
+git clone https://github.com/Bitovi/slack-mcp-server.git
+cd slack-mcp-server
+
+# Build the Docker image
+docker build -t slack-mcp-server:latest .
+```
 
 ### From Source
 
@@ -40,11 +107,15 @@ make build
 
 ### Verify Installation
 
+**Docker:**
 ```bash
-# Check version
-./slack-mcp-server --version
+docker run --rm slack-mcp-server:latest --version
+docker run --rm slack-mcp-server:latest --help
+```
 
-# View help
+**Binary:**
+```bash
+./slack-mcp-server --version
 ./slack-mcp-server --help
 ```
 
@@ -114,6 +185,8 @@ For persistent configuration, add these to your shell profile (`~/.bashrc`, `~/.
 
 ### Starting the Server
 
+#### Option 1: Using the Binary
+
 ```bash
 # Ensure the bot token is set (required)
 export SLACK_BOT_TOKEN=xoxb-your-bot-token-here
@@ -123,6 +196,26 @@ export SLACK_USER_TOKEN=xoxp-your-user-token-here
 
 # Run the server
 ./slack-mcp-server
+```
+
+#### Option 2: Using Docker
+
+**Pull from Docker Hub:**
+```bash
+docker pull bitovi/slack-mcp-server:latest
+```
+
+**Or build locally:**
+```bash
+docker build -t slack-mcp-server:latest .
+```
+
+**Run the container:**
+```bash
+docker run -i --rm \
+  -e SLACK_BOT_TOKEN=xoxb-your-bot-token-here \
+  -e SLACK_USER_TOKEN=xoxp-your-user-token-here \
+  slack-mcp-server:latest
 ```
 
 The server uses Stdio transport and will wait for MCP requests on stdin.
@@ -374,6 +467,8 @@ https://workspace.slack.com/archives/C01234567/p1234567890123456?thread_ts=12345
 
 Add the server to your Claude Code MCP configuration:
 
+#### Option 1: Using the Binary
+
 ```json
 {
   "mcpServers": {
@@ -388,7 +483,35 @@ Add the server to your Claude Code MCP configuration:
 }
 ```
 
-**Note:** `SLACK_USER_TOKEN` is optional. If omitted, the `search_messages` tool will not be available, but `read_message` and `list_channel_messages` will work normally.
+#### Option 2: Using Docker
+
+```json
+{
+  "mcpServers": {
+    "slack": {
+      "command": "docker",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "-e",
+        "SLACK_BOT_TOKEN",
+        "-e",
+        "SLACK_USER_TOKEN",
+        "bitovi/slack-mcp-server:latest"
+      ],
+      "env": {
+        "SLACK_BOT_TOKEN": "xoxb-your-bot-token-here",
+        "SLACK_USER_TOKEN": "xoxp-your-user-token-here"
+      }
+    }
+  }
+}
+```
+
+**Note:** 
+- `SLACK_USER_TOKEN` is optional. If omitted, the `search_messages` tool will not be available, but `read_message` and `list_channel_messages` will work normally.
+- For Docker option, you can use `bitovi/slack-mcp-server:latest` for the published image or `slack-mcp-server:latest` if you built it locally.
 
 ## Development
 
@@ -454,6 +577,42 @@ go fmt ./...
 
 # Run linter (requires golangci-lint)
 golangci-lint run
+```
+
+### Docker Publishing
+
+The project includes a GitHub Actions workflow that automatically builds and publishes Docker images to Docker Hub.
+
+**Automated Publishing:**
+- **On push to `main` branch**: Publishes as `bitovi/slack-mcp-server:latest`
+- **On version tags** (e.g., `v1.0.0`): Publishes multiple tags:
+  - `bitovi/slack-mcp-server:v1.0.0`
+  - `bitovi/slack-mcp-server:1.0.0`
+  - `bitovi/slack-mcp-server:1.0`
+  - `bitovi/slack-mcp-server:1`
+  - `bitovi/slack-mcp-server:latest`
+
+**Creating a release:**
+```bash
+# Tag the commit
+git tag v1.0.0
+
+# Push the tag
+git push origin v1.0.0
+
+# The GitHub Actions workflow will automatically build and publish
+```
+
+**Multi-platform support:**
+The Docker images are built for both `linux/amd64` and `linux/arm64` architectures.
+
+**Manual Docker build:**
+```bash
+# Build locally
+docker build -t slack-mcp-server:latest .
+
+# Build for multiple platforms
+docker buildx build --platform linux/amd64,linux/arm64 -t slack-mcp-server:latest .
 ```
 
 ## Error Handling

@@ -1,0 +1,37 @@
+# Git
+.git
+.gitignore
+
+# GitHub
+.github
+
+# Documentation
+README.md
+*.md
+
+# IDE
+.vscode
+.idea
+
+# Build artifacts
+bin/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test files
+*_test.go
+
+# Scripts
+scripts/
+
+# Docker
+Dockerfile
+.dockerignore
+
+# OS
+.DS_Store
+*.swp
+*.swo
+*~

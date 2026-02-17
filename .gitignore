@@ -10,3 +10,6 @@ bin/
 .worktrees/
 .security-key
 logs/security/
+
+# Environment
+.env
